@@ -54,8 +54,11 @@ docker compose up -d --build
 # 3. Baixe os modelos open source (~17 GB, só na primeira vez)
 ./scripts/pull_models.sh
 
-# 4. Inicialize o conselho administrativo
+# 4. Contrate os 5 Chiefs
 curl -X POST http://localhost:8000/agents/chiefs/init
+
+# 5. Materialize as personas do conselho (missão, critérios de decisão, memória)
+curl -X POST http://localhost:8000/council/profiles/init
 ```
 
 Pronto. O **escritório virtual** abre em <http://localhost:3000> e a documentação
@@ -63,6 +66,29 @@ interativa da API fica em <http://localhost:8000/docs>.
 
 > Tem GPU NVIDIA? Suba com o override para acelerar a inferência:
 > `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
+
+### Colocando a empresa para trabalhar
+
+A simulação é **reativa**: não há um relógio que force os agentes a agir sozinhos. Recém-
+inicializados, os Chiefs ficam em `IDLE` — é o repouso esperado. Quem dá a largada é você,
+submetendo uma pauta ao conselho ou uma tarefa a um agente:
+
+```bash
+# Submete uma pauta à deliberação (cada Chief emite um parecer; o CEO desempata)
+curl -X POST http://localhost:8000/council/deliberate \
+  -H 'content-type: application/json' \
+  -d '{"topic":"Modelo de negócio inicial",
+       "description":"Definir qual produto a empresa deve construir primeiro.",
+       "submitted_by":"CEO"}'
+
+# Põe um Chief para pensar em voz alta (vira balão de fala e raio-X cognitivo na interface)
+AGENT=$(curl -s http://localhost:8000/agents/status | jq -r '.chiefs[0].id')
+curl -X POST "http://localhost:8000/agents/$AGENT/reasoning/run" \
+  -H 'content-type: application/json' \
+  -d '{"task":"Quanta RAM sobra para novos subagentes?"}'
+```
+
+Com a interface aberta, o canal `WS /ws/game-state` empurra cada passo em tempo real.
 
 ---
 
