@@ -116,6 +116,10 @@ class AuditEventType(StrEnum):
     TALENT_PROFILE_CREATED = "TALENT_PROFILE_CREATED"
     TALENT_PROFILE_REUSED = "TALENT_PROFILE_REUSED"
     TALENT_PROFILE_RATED = "TALENT_PROFILE_RATED"
+    REASONING_STARTED = "REASONING_STARTED"
+    REASONING_COMPLETED = "REASONING_COMPLETED"
+    REASONING_FAILED = "REASONING_FAILED"
+    REASONING_PURGED = "REASONING_PURGED"
 
 
 class MemoryType(StrEnum):
@@ -126,6 +130,24 @@ class MemoryType(StrEnum):
     MEETING = "MEETING"
     DIALOGUE = "DIALOGUE"
     KNOWLEDGE = "KNOWLEDGE"
+
+
+class ReasoningStepType(StrEnum):
+    """Nós do ciclo ReAct capturados durante o raciocínio de um agente."""
+
+    THOUGHT = "THOUGHT"
+    ACTION = "ACTION"
+    OBSERVATION = "OBSERVATION"
+    CONCLUSION = "CONCLUSION"
+
+
+class ReasoningStatus(StrEnum):
+    """Estado de uma sessão de raciocínio."""
+
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 CHIEF_ROLES: tuple[AgentRole, ...] = (

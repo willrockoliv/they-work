@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     nature_max_concurrent_subagents: int = Field(default=4, gt=0)
     nature_max_queue_size: int = Field(default=32, gt=0)
 
+    # --- Observabilidade cognitiva (Fase 3) ----------------------------------
+    reasoning_capture_enabled: bool = True
+    reasoning_max_steps: int = Field(default=8, gt=0)
+    reasoning_stream_buffer: int = Field(default=256, gt=0)
+    reasoning_retention_days: int = Field(default=30, gt=0)
+    reasoning_max_content_chars: int = Field(default=8_000, gt=0)
+
     @field_validator("nature_critical_threshold")
     @classmethod
     def _critical_above_warning(cls, value: float, info: object) -> float:

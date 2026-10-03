@@ -100,6 +100,38 @@ Pronto. A documentação interativa da API fica em <http://localhost:8000/docs>.
 | `POST` | `/nature/audit-request` | Auditoria isolada da Natureza |
 | `GET` | `/nature/alerts` | Alertas corporativos estruturados |
 
+### Fase 3 — Transparência e observabilidade
+
+| Método | Rota | O que faz |
+|--------|------|-----------|
+| `POST` | `/agents/{id}/reasoning/run` | Executa uma tarefa capturando todo o ciclo ReAct |
+| `GET` | `/agents/{id}/reasoning-flow` | Fluxograma `[Pensamento]→[Ferramenta]→[Observação]→[Conclusão]` |
+| `GET` | `/agents/{id}/live-status` | Status ao vivo: progresso, última ação e tempo decorrido |
+| `GET` | `/reasoning/sessions` | Histórico de sessões de raciocínio |
+| `GET` | `/reasoning/sessions/{id}` | Replay completo de uma sessão |
+| `GET` | `/reasoning/sessions/{id}/flow` | Fluxograma de uma sessão específica |
+| `GET` | `/reasoning/metrics` | Tokens, tempo, taxa de sucesso, custo em MB·s e ROI |
+| `GET` | `/reasoning/export` | Dump JSON das sessões para análise externa |
+| `POST` | `/reasoning/retention/purge` | Aplica a política de retenção |
+| `WS` | `/ws/agents/{id}/reasoning` | Fluxo cognitivo de um agente (com replay na conexão) |
+| `WS` | `/ws/reasoning` | Fluxo cognitivo de todos os agentes |
+
+Contratos detalhados: [`docs/API-REASONING.md`](docs/API-REASONING.md),
+[`docs/REASONING-FORMAT.md`](docs/REASONING-FORMAT.md) e
+[`docs/FLOWCHART-SCHEMA.md`](docs/FLOWCHART-SCHEMA.md).
+
+```bash
+# Ver um agente pensar em voz alta
+AGENT=$(curl -s localhost:8000/agents/status | jq -r '.chiefs[0].id')
+curl -s -X POST "localhost:8000/agents/$AGENT/reasoning/run" \
+  -H 'content-type: application/json' \
+  -d '{"task":"Quanta RAM sobra para novos subagentes?"}' | jq '.steps[].content'
+```
+
+> Sem o Ollama no ar (ou sem o modelo baixado), o agente cai num planejador determinístico:
+> consulta uma ferramenta de verdade e conclui a partir da observação. A simulação nunca
+> deixa de ser observável.
+
 ---
 
 ## Os cinco modelos
@@ -146,5 +178,6 @@ docker compose exec backend alembic upgrade head
   FastAPI e a Natureza.
 - [x] **Fase 2 — Estruturação Societária:** personas C-Level com veto e desempate,
   pipeline de contratação do RA, Banco de Talentos versionado e seleção dinâmica de modelos.
-- [ ] **Fase 3 — Transparência:** interceptação do fluxo ReAct de cada agente.
+- [x] **Fase 3 — Transparência:** interceptação do fluxo ReAct de cada agente, fluxograma
+  cognitivo, WebSocket ao vivo, métricas de custo/ROI e política de retenção.
 - [ ] **Fase 4 — Motor 2D:** escritório top-down, avatares, raio-X cognitivo via WebSocket.

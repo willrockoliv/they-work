@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,6 +13,9 @@ from app.config.logging import get_logger
 from app.config.settings import Settings, get_settings
 
 logger = get_logger(__name__)
+
+#: Invocado a cada fragmento de texto recebido do modelo.
+TokenCallback = Callable[[str], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +40,33 @@ class InstalledModel:
 
 class OllamaUnavailableError(RuntimeError):
     """O servidor Ollama não respondeu dentro do tempo esperado."""
+
+
+@dataclass(frozen=True, slots=True)
+class OllamaCompletion:
+    """Resultado de uma geração, com a contabilidade de tokens do próprio Ollama."""
+
+    model: str
+    text: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    duration_ms: int = 0
+    done_reason: str | None = None
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "text": self.text,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "duration_ms": self.duration_ms,
+            "done_reason": self.done_reason,
+        }
 
 
 class OllamaClient:
@@ -102,3 +134,55 @@ class OllamaClient:
                 )
             )
         return models
+
+    async def generate(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        system: str | None = None,
+        options: dict[str, Any] | None = None,
+        on_token: TokenCallback | None = None,
+    ) -> OllamaCompletion:
+        """Gera texto em streaming, repassando cada fragmento a `on_token`.
+
+        O streaming é o que torna o pensamento do agente observável: o chamador
+        recebe os tokens brutos enquanto o modelo ainda está escrevendo.
+        """
+        body: dict[str, Any] = {"model": model, "prompt": prompt, "stream": True}
+        if system:
+            body["system"] = system
+        if options:
+            body["options"] = options
+
+        chunks: list[str] = []
+        final: dict[str, Any] = {}
+        try:
+            async with (
+                self._client() as client,
+                client.stream("POST", "/api/generate", json=body) as response,
+            ):
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    fragment = str(event.get("response", ""))
+                    if fragment:
+                        chunks.append(fragment)
+                        if on_token is not None:
+                            on_token(fragment)
+                    if event.get("done"):
+                        final = event
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            logger.warning("ollama.generate_failed", model=model, error=str(exc))
+            raise OllamaUnavailableError(str(exc)) from exc
+
+        return OllamaCompletion(
+            model=str(final.get("model", model)),
+            text="".join(chunks),
+            prompt_tokens=int(final.get("prompt_eval_count", 0)),
+            completion_tokens=int(final.get("eval_count", 0)),
+            duration_ms=int(final.get("total_duration", 0)) // 1_000_000,
+            done_reason=final.get("done_reason"),
+        )

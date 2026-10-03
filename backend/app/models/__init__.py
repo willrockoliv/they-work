@@ -15,12 +15,15 @@ from app.models.enums import (
     CouncilStance,
     MemoryType,
     NatureDecision,
+    ReasoningStatus,
+    ReasoningStepType,
     RequestStatus,
     ResourceStatus,
     TaskComplexity,
 )
 from app.models.hiring import SubagentRequest
 from app.models.memory import CorporateMemory
+from app.models.reasoning import ReasoningSession, ReasoningStep
 from app.models.talent import TalentProfile
 
 __all__ = [
@@ -40,6 +43,10 @@ __all__ = [
     "CouncilStance",
     "MemoryType",
     "NatureDecision",
+    "ReasoningSession",
+    "ReasoningStatus",
+    "ReasoningStep",
+    "ReasoningStepType",
     "RequestStatus",
     "ResourceStatus",
     "SubagentRequest",

@@ -302,6 +302,60 @@ restrições, formato de saída). As `BASE_CONSTRAINTS` são invariantes do dom�
 subagente pode instanciar outros agentes nem acessar recursos externos, e todo subagente
 deve produzir um relatório final — o único artefato que sobrevive à sua demissão.
 
+### 4.8 Observabilidade Cognitiva (Fase 3)
+
+O raio-X do pensamento dos agentes. Cinco módulos, cada um com uma responsabilidade única:
+
+| Módulo | Responsabilidade |
+|--------|------------------|
+| `services/react_engine.py` | Loop ReAct: monta o prompt, chama o modelo, faz o parse dos rótulos, executa a ferramenta e repete até a conclusão ou o teto de passos |
+| `services/reasoning_tracer.py` | Ponto único de captura: persiste cada passo, acumula tokens e publica no barramento |
+| `services/reasoning_broker.py` | Pub/sub em memória, um canal por agente + canal global, com backpressure |
+| `services/reasoning_tools.py` | Cinco ferramentas 100% offline, cada uma devolvendo texto legível + payload estruturado |
+| `services/reasoning_flow.py` | Serializa a sequência linear de passos no grafo que o frontend desenha |
+| `services/reasoning_metrics.py` | Tokens, tempo, taxa de sucesso, custo em MB·s, ROI, retenção e export |
+
+```mermaid
+flowchart LR
+    R["POST /reasoning/run"] --> E[ReactEngine]
+    E -->|streaming| O["OllamaClient.generate"]
+    O --> E
+    E --> T[ReasoningTracer]
+    T --> DB[(reasoning_steps)]
+    T --> B[ReasoningBroker]
+    B --> W["WS /ws/reasoning"]
+    DB --> F["GET /reasoning-flow"]
+```
+
+**ADR-004 — wrapper próprio em vez de LangGraph/CrewAI.** O PRD sugeria essas bibliotecas,
+mas elas arrastam dezenas de dependências transitivas sem pin (conflitando com a regra de
+reprodutibilidade do projeto), assumem rede disponível e escondem o prompt real atrás de
+abstrações. Como a interceptação é trivial sobre o streaming nativo do Ollama
+(`POST /api/generate`), o loop foi escrito à mão: ~180 linhas, zero dependências novas e
+controle total sobre o que entra na trilha de auditoria.
+
+**ADR-005 — uma tabela com discriminador.** `reasoning_steps` guarda os quatro tipos de nó
+(`THOUGHT`, `ACTION`, `OBSERVATION`, `CONCLUSION`) num único esquema, ordenados por
+`sequence`. Quatro tabelas separadas teriam colunas idênticas e exigiriam quatro JOINs para
+reconstruir o fluxograma.
+
+**ADR-006 — broker em memória, não Redis.** O backend roda num único worker; o Redis entra
+como transporte na Fase 4, quando houver mais de um processo. A troca não toca nas rotas
+porque `ReasoningBroker` é a única superfície que elas enxergam. `publish` usa
+`loop.call_soon_threadsafe`, portanto funciona tanto do threadpool das rotas síncronas
+quanto de código assíncrono.
+
+**ADR-007 — captura síncrona na transação do agente.** O passo é gravado e publicado no
+mesmo ponto do código. Sem fila intermediária não há como perder passo nem reordená-lo.
+
+**Offline-first.** Se o Ollama estiver fora do ar ou o modelo exigido não tiver sido baixado,
+um planejador determinístico assume o lugar do LLM: escolhe uma ferramenta por heurística
+lexical, executa a consulta de verdade e conclui com base na observação. A simulação
+continua observável; muda apenas `total_tokens = 0`.
+
+Detalhamento: [`REASONING-FORMAT.md`](REASONING-FORMAT.md),
+[`FLOWCHART-SCHEMA.md`](FLOWCHART-SCHEMA.md) e [`API-REASONING.md`](API-REASONING.md).
+
 ---
 
 ## 5. Arquitetura de Dados
@@ -316,6 +370,8 @@ erDiagram
     agents ||--o| chief_profiles : "persona de"
     agents ||--o{ subagent_requests : "solicita"
     talent_bank ||--o{ subagent_requests : "atende"
+    agents ||--o{ reasoning_sessions : "raciocina em"
+    reasoning_sessions ||--o{ reasoning_steps : "composta por"
 
     agents {
         uuid id PK
@@ -534,25 +590,32 @@ sequenceDiagram
 
 ## 8. Estratégia de Testes
 
-**168 testes, todos offline e determinísticos — 98% de cobertura.** Nenhum toca rede, GPU ou
+**255 testes, todos offline e determinísticos — 98% de cobertura.** Nenhum toca rede, GPU ou
 PostgreSQL real.
 
 | Arquivo | Cobre |
 |---------|-------|
 | `test_nature_manager.py` | Orçamento, teto por regime, bloqueio, fila FIFO e alertas |
 | `test_api_fase2.py` | Conselho, RA, Banco de Talentos, Natureza e fluxo ponta a ponta |
+| `test_api_fase3.py` | Execução observável, fluxograma, status ao vivo, métricas, retenção, WebSocket e overhead |
 | `test_ra_service.py` | Triagem, esclarecimento, contratação, demissão, carga e concorrência |
 | `test_talent_bank.py` | Slug, palavras-chave, busca, versionamento, uso e avaliação |
 | `test_council_service.py` | Raciocínio de cada persona, veto do CTO e desempate do CEO |
+| `test_react_engine.py` | Parser ReAct, loop, teto de passos, ferramentas e fallback offline |
+| `test_reasoning_tracer.py` | Captura por tipo de passo, totais, auditoria e barramento pub/sub |
+| `test_reasoning_flow.py` | Nós, arestas, aresta de ciclo, dicas de layout e status ao vivo |
+| `test_reasoning_metrics.py` | Agregações, custo, ROI, política de retenção e export |
 | `test_model_catalog.py` | Integridade do catálogo, seleção por complexidade e `tier_below` |
 | `test_api.py` | Endpoints da Fase 1, incluindo cenários de degradação |
 | `test_persistence.py` | Schema do banco, idempotência de `init_chiefs`, auditoria, memória |
 | `test_complexity_classifier.py` | Heurística lexical, ajustes de escopo e piso por cargo |
 | `test_settings.py` | Validação de configuração e propriedades derivadas |
-| `test_ollama_client.py` | Parsing e tolerância a falhas do cliente Ollama |
+| `test_ollama_client.py` | Parsing, streaming de `generate` e tolerância a falhas |
 
-**Dublês:** SQLite em memória (`StaticPool`) para o banco; `httpx.MockTransport` para o Ollama;
-sondas lambda para o hardware. A substituição é feita via `app.dependency_overrides`.
+**Dublês:** SQLite em memória (`StaticPool`) para o banco; `httpx.MockTransport` para o Ollama
+(incluindo respostas ReAct roteirizadas em NDJSON); sondas lambda para o hardware. A
+substituição é feita via `app.dependency_overrides` — que também vale para as rotas
+WebSocket.
 
 **Concorrência:** exercitada sobre o `NatureManager` (`ThreadPoolExecutor`), que é o estado
 mutável compartilhado. A escrita no banco permanece sequencial nos testes porque a `Session`
@@ -565,8 +628,8 @@ do SQLAlchemy não é thread-safe.
 | Fase | Onde encaixa |
 |------|--------------|
 | **2 — Societária** | ✅ Concluída: `council_service.py`, `ra_service.py`, `talent_bank.py`, `complexity_classifier.py` e `prompt_factory.py`. |
-| **3 — Observabilidade** | Callbacks ReAct serializados em `corporate_memory` / nova tabela `thought_traces`; `audit_logs.payload` e `chief_communications.payload` (JSONB) já comportam o formato intermediário. |
-| **4 — Motor 2D** | `routes/ws.py` com WebSocket; Redis (já provisionado) atua como pub/sub entre workers; CORS já liberado para `localhost:3000`. |
+| **3 — Observabilidade** | ✅ Concluída: `react_engine.py`, `reasoning_tracer.py`, `reasoning_broker.py`, `reasoning_tools.py`, `reasoning_flow.py`, `reasoning_metrics.py` e `routes/ws.py`. |
+| **4 — Motor 2D** | Frontend consome `GET /reasoning-flow`, `GET /live-status` e os canais `WS /ws/reasoning`; CORS já liberado para `localhost:3000`; Redis entra como transporte do `ReasoningBroker` quando houver mais de um worker. |
 
 ---
 
@@ -578,5 +641,7 @@ do SQLAlchemy não é thread-safe.
 | `NatureManager` é singleton em memória | A fila de contratações não sobrevive a um restart | Redis já está provisionado para persistir a fila na Fase 2 |
 | SQLAlchemy síncrono em rotas async | Handlers de banco rodam no threadpool | Adequado para a escala local; migrar para `asyncpg` só se houver gargalo medido |
 | `psutil` lê a RAM do host, não do cgroup do container | Em hosts com limites de cgroup diferentes a leitura pode divergir | `NATURE_RAM_LIMIT_MB` permite fixar o teto manualmente |
-| Raciocinio dos Chiefs é lexical, não inferencial | Propostas com sinônimos fora das listas podem ser mal classificadas | Deliberação determinística é um requisito de auditoria; a inferência real entra na Fase 3 |
-| Subagentes ainda não executam tarefas via Ollama | O metaprompt é gerado e persistido, mas nenhuma inferência é disparada | `OllamaClient.generate()/chat()` entra na Fase 3 junto com a interceptação ReAct |
+| Raciocínio dos Chiefs é lexical, não inferencial | Propostas com sinônimos fora das listas podem ser mal classificadas | Deliberação determinística é um requisito de auditoria; a inferência real já existe via `POST /agents/{id}/reasoning/run` |
+| `POST /reasoning/run` é síncrono | Uma tarefa com modelo grande pode segurar a conexão HTTP por dezenas de segundos | Os passos já chegam ao vivo pelo WebSocket; a execução em background entra na Fase 4 |
+| `ReasoningBroker` vive no processo | Com mais de um worker Uvicorn, um cliente só recebe os eventos do worker a que se conectou | Trocar o transporte por Redis pub/sub (ADR-006); a interface pública não muda |
+| Rotas síncronas chamam o Ollama via `asyncio.run` | Um event loop novo por requisição | Custo irrelevante diante da latência do LLM; mantém todo o backend síncrono e previsível |

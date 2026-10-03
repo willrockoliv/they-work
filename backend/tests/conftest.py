@@ -21,6 +21,13 @@ os.environ.setdefault("NATURE_CRITICAL_THRESHOLD", "0.90")
 os.environ.setdefault("NATURE_MAX_CONCURRENT_SUBAGENTS", "4")
 os.environ.setdefault("NATURE_MAX_QUEUE_SIZE", "32")
 
+os.environ.setdefault("REASONING_CAPTURE_ENABLED", "true")
+os.environ.setdefault("REASONING_MAX_STEPS", "4")
+os.environ.setdefault("REASONING_STREAM_BUFFER", "64")
+os.environ.setdefault("REASONING_RETENTION_DAYS", "30")
+os.environ.setdefault("REASONING_MAX_CONTENT_CHARS", "8000")
+
+import json
 from collections.abc import Iterator
 
 import httpx
@@ -38,6 +45,7 @@ from app.models import Base
 from app.routes.deps import get_ollama_client
 from app.services.nature_manager import NatureManager, get_nature_manager
 from app.services.ollama_client import OllamaClient
+from app.services.reasoning_broker import get_broker
 
 
 @pytest.fixture
@@ -115,6 +123,46 @@ def make_ollama(handler: httpx.MockTransport | None = None) -> OllamaClient:
 
         handler = httpx.MockTransport(_default)
     return OllamaClient(transport=handler)
+
+
+def stream_body(text: str, *, prompt_tokens: int = 12, completion_tokens: int = 34) -> bytes:
+    """NDJSON equivalente ao que o Ollama devolve em `/api/generate?stream=true`."""
+    lines = [json.dumps({"response": chunk, "done": False}) for chunk in text.splitlines(True)]
+    lines.append(
+        json.dumps(
+            {
+                "model": "llama3.2:3b",
+                "response": "",
+                "done": True,
+                "done_reason": "stop",
+                "prompt_eval_count": prompt_tokens,
+                "eval_count": completion_tokens,
+                "total_duration": 1_500_000_000,
+            }
+        )
+    )
+    return ("\n".join(lines)).encode()
+
+
+def make_react_ollama(turns: list[str]) -> OllamaClient:
+    """Cliente que devolve, em ordem, cada resposta ReAct roteirizada."""
+    pending = list(turns)
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != "/api/generate":
+            return httpx.Response(404)
+        text = pending.pop(0) if pending else "Conclusão: roteiro esgotado."
+        return httpx.Response(200, content=stream_body(text))
+
+    return OllamaClient(transport=httpx.MockTransport(_handler))
+
+
+@pytest.fixture(autouse=True)
+def _reset_broker() -> Iterator[None]:
+    """Nenhum assinante sobrevive de um teste para o outro."""
+    get_broker().reset()
+    yield
+    get_broker().reset()
 
 
 @pytest.fixture
