@@ -124,6 +124,12 @@ def lightest_model() -> ModelSpec:
     return all_models()[0]
 
 
+def tier_below(spec: ModelSpec) -> ModelSpec:
+    """Modelo imediatamente mais leve que `spec`, ou o próprio se já for o mais leve."""
+    lighter = [candidate for candidate in all_models() if candidate.tier < spec.tier]
+    return lighter[-1] if lighter else spec
+
+
 def preferred_for(complexity: TaskComplexity) -> ModelSpec:
     """Modelo ideal para a complexidade informada, ignorando restrições de recurso."""
     return _BY_NAME[_PREFERRED_BY_COMPLEXITY[complexity]]

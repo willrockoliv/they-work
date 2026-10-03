@@ -182,6 +182,12 @@ def count_active_subagents(session: Session) -> int:
     return len(list(session.scalars(stmt)))
 
 
+def get_chief(session: Session, role: AgentRole) -> Agent | None:
+    """Chief fixo de um cargo, se já tiver sido inicializado."""
+    stmt = select(Agent).where(Agent.agent_type == AgentType.CHIEF, Agent.role == role)
+    return session.scalars(stmt).first()
+
+
 def blueprint_for(role: AgentRole) -> ChiefBlueprint | None:
     """Definição fixa de um Chief, se existir."""
     return _BLUEPRINT_BY_ROLE.get(role)

@@ -10,6 +10,17 @@ os.environ.setdefault("LOG_LEVEL", "WARNING")
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 os.environ.setdefault("OLLAMA_BASE_URL", "http://ollama.test:11434")
 
+# Os limites da Natureza são fixados aqui para que a suíte não dependa do `.env` da máquina:
+# variáveis de ambiente têm precedência sobre o arquivo em pydantic-settings.
+os.environ.setdefault("NATURE_RAM_LIMIT_MB", "16384")
+os.environ.setdefault("NATURE_VRAM_LIMIT_MB", "4096")
+os.environ.setdefault("NATURE_RESERVED_RAM_MB", "2048")
+os.environ.setdefault("NATURE_RESERVED_VRAM_MB", "512")
+os.environ.setdefault("NATURE_WARNING_THRESHOLD", "0.75")
+os.environ.setdefault("NATURE_CRITICAL_THRESHOLD", "0.90")
+os.environ.setdefault("NATURE_MAX_CONCURRENT_SUBAGENTS", "4")
+os.environ.setdefault("NATURE_MAX_QUEUE_SIZE", "32")
+
 from collections.abc import Iterator
 
 import httpx

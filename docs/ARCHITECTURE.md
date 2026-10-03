@@ -138,7 +138,38 @@ status = CRITICAL  se max(ram_ratio, vram_ratio) ≥ 0.90
 ```
 
 A reserva (`NATURE_RESERVED_RAM_MB`, 2 GB por padrão) é o que garante que o SO e a IDE do
-usuário continuem utilizáveis enquanto a empresa opera.
+usuário continuem utilizáveis enquanto a empresa opera. Note que `ram_used` é a leitura do
+**host inteiro** — navegador, IDE e demais containers entram na conta, o que é intencional:
+a empresa virtual disputa a máquina com o usuário.
+
+Por isso **a reserva é o knob de folga, não o limite**. `NATURE_RAM_LIMIT_MB` é também o
+denominador do percentual de saúde; configurá-lo abaixo da RAM física distorce o ratio
+(`ram_used` continua sendo o do host e pode superar o teto, levando a um `CRITICAL`
+permanente com orçamento zero). Mantenha o limite no teto físico e use a reserva para
+decidir quanto da máquina fica fora do alcance da empresa.
+
+**Calibração: reserva × limiares**
+
+Os dois mecanismos protegem o mesmo recurso, então o mais restritivo vence. Para que o
+regime de contenção chegue a *conceder* um modelo por pressão de **RAM** (em vez de apenas
+represar a vaga), vale a relação:
+
+```text
+NATURE_RESERVED_RAM_MB + 2048  ≤  (1 − NATURE_WARNING_THRESHOLD) × ram_limit
+                        ↑
+          RAM do modelo mais leve (Llama 3.2 3B)
+```
+
+Quando ela não vale, a reserva **domina** os limiares: sair de `HEALTHY` já zera o orçamento
+e toda contratação vai para a fila sem passar pelo downgrade. Com os valores padrão
+(16384 / 2048 / 0.75) a igualdade fica no limite exato — a banda de contenção por RAM é de
+um único ponto. O teste `test_reserva_domina_os_limiares_na_configuracao_do_projeto` fixa
+esse comportamento para que a mudança seja consciente.
+
+Isso **não** torna o teto por regime supérfluo: como `ram_used` e `ram_allocatable` são
+duas leituras da mesma variável, o orçamento já resolve a pressão de RAM sozinho — mas ele
+não enxerga a GPU. O teto é o único canal pelo qual a **saturação de VRAM** influencia a
+escolha do modelo, e aí ele decide de fato (há RAM de sobra, porém o regime é crítico).
 
 **Máquina de decisão**
 
@@ -147,18 +178,20 @@ flowchart TD
     req["HiringRequest<br/>(RA → Natureza)"] --> snap["snapshot()"]
     snap --> lim{"subagentes ativos<br/>≥ limite?"}
     lim -->|sim| defer
-    lim -->|não| crit{"status == CRITICAL?"}
-    crit -->|sim| light{"modelo mais leve<br/>cabe no orçamento?"}
-    light -->|não| defer
-    light -->|sim| down["DOWNGRADED<br/>otimização forçada"]
-    crit -->|não| fit{"best_fit_within(teto, orçamento)"}
+    lim -->|não| teto["_ceiling_for(preferido, status)"]
+    teto --> fit{"best_fit_within(teto, orçamento)"}
     fit -->|"None"| defer
-    fit -->|"tier < preferido"| down2["DOWNGRADED"]
+    fit -->|"tier < preferido"| down["DOWNGRADED"]
     fit -->|"tier == preferido"| ok["ALLOWED"]
     defer["enqueue()"] --> q{"fila tem espaço?"}
     q -->|sim| queued["QUEUED"]
     q -->|não| blocked["BLOCKED"]
 ```
+
+O regime da infraestrutura **rebaixa o teto** em vez de desviar o fluxo: `CRITICAL` fixa o
+teto no modelo mais leve, `WARNING` desce um tier, `HEALTHY` mantém o preferido. Com isso
+existe uma única regra de seleção (`best_fit_within`) e nenhum ramo que prometa um veredito
+que não consegue entregar.
 
 Cada veredito carrega uma `narrative` em linguagem corporativa, que é o texto injetado no
 contexto dos agentes e exibido na UI:
@@ -193,11 +226,47 @@ A diferença entre os dois é o que define o flag `downgraded`.
 Os 5 Chiefs são definidos como `ChiefBlueprint` imutáveis, com system prompts derivados
 diretamente do PRD. `init_chiefs()` é **idempotente** (reconcilia por `role`), monta a
 hierarquia — todos reportam ao CEO, o CEO reporta ao usuário — e registra a criação na
-auditoria antes do commit.
+auditoria antes do commit. `get_chief(role)` e `count_active_subagents()` são os pontos de
+entrada usados pelo RA e pela Natureza.
 
-**Extensibilidade (Fase 2):** o RA passará a criar `TalentProfile` e instanciar `Agent` do tipo
-`SUBAGENT` com `talent_profile_id` preenchido, sempre consultando
-`/resources/hiring/evaluate` antes.
+### 4.3.1 Conselho Administrativo (`services/council_service.py`)
+
+Cada persona C-Level herda de `ChiefAgent` e implementa `analyze(proposal) -> ChiefOpinion`
+com critérios próprios e **determinísticos** — nenhuma inferência de LLM é gasta para
+deliberar, o que mantém a decisão auditável e reproduzível.
+
+- **CTO** tem poder de **veto**: sinais inviáveis para o hardware alvo bloqueiam a proposta
+  independentemente da maioria.
+- **CMO** exige público-alvo; **CFO** exige modelo de monetização.
+- **CEO** não vota com as diretorias: consolida o resultado em `APPROVED`,
+  `APPROVED_WITH_CONDITIONS` ou `REJECTED`.
+- **RA** sempre se abstém em pauta de produto.
+
+Cada deliberação gera 5 linhas em `chief_communications` (pauta + 3 pareceres + decisão) e
+um evento `COUNCIL_DELIBERATION`. `chief_profiles.context_memory` guarda os 25 fatos
+corporativos mais recentes de cada Chief. Detalhes em [CHIEF-LOGIC.md](CHIEF-LOGIC.md).
+
+### 4.3.2 Recursos Agênticos (`services/ra_service.py`)
+
+O RA é o único componente autorizado a criar `Agent` do tipo `SUBAGENT`. O pipeline é
+linear e cada etapa deixa rastro de auditoria:
+
+1. **Triagem** (`screen`) — devolve perguntas ao Chief quando o pedido está vago, **sem
+   consumir recursos de infraestrutura**.
+2. **Classificação** (`complexity_classifier`) — estima o peso cognitivo a partir do texto.
+3. **Auditoria da Natureza** — `evaluate_hiring()` aprova, rebaixa o modelo, enfileira ou
+   bloqueia.
+4. **Banco de Talentos** — reaproveita o metaprompt existente ou redige um novo
+   (`prompt_factory`).
+5. **Instanciação** — o subagente é criado com o modelo concedido e passa a reportar ao
+   Chief solicitante.
+6. **Demissão** — libera a RAM contabilizada, arquiva o relatório final em
+   `corporate_memory` e credita a nota de desempenho ao perfil.
+
+Detalhes em [HIRING-FLOW.md](HIRING-FLOW.md) e [TALENT-BANK.md](TALENT-BANK.md).
+
+**Extensibilidade (Fase 3):** o metaprompt gerado pelo `prompt_factory` é o ponto de
+enganche natural para a interceptação do fluxo ReAct.
 
 ### 4.4 Cliente Ollama (`services/ollama_client.py`)
 
@@ -216,6 +285,23 @@ O `transport` é injetável, o que permite testar sem rede via `httpx.MockTransp
 `record_event()` **não faz commit** — ele participa da transação do chamador. Isso garante que
 a decisão da Natureza e o seu registro de auditoria sejam atômicos.
 
+### 4.6 Classificador de Complexidade (`services/complexity_classifier.py`)
+
+Heurística lexical determinística: normaliza o texto (minúsculas, sem acentuação), soma
+pesos de palavras-chave, aplica ajustes de escopo (número de entregáveis, ferramentas e
+tamanho do briefing) e converte o score em `TaskComplexity`. Um **piso por cargo** impede
+que uma vaga pedida pelo CTO caia abaixo de `MODERATE`.
+
+A escolha por heurística, e não por inferência, é deliberada: decidir qual modelo usar não
+pode custar uma rodada de LLM.
+
+### 4.7 Fábrica de Metaprompts (`services/prompt_factory.py`)
+
+Monta o system prompt do subagente em seções fixas (objetivo, entregáveis, ferramentas,
+restrições, formato de saída). As `BASE_CONSTRAINTS` são invariantes do domínio: nenhum
+subagente pode instanciar outros agentes nem acessar recursos externos, e todo subagente
+deve produzir um relatório final — o único artefato que sobrevive à sua demissão.
+
 ---
 
 ## 5. Arquitetura de Dados
@@ -224,8 +310,12 @@ a decisão da Natureza e o seu registro de auditoria sejam atômicos.
 erDiagram
     agents ||--o{ agents : "reports_to"
     talent_bank ||--o{ agents : "instancia"
+    talent_bank ||--o{ talent_bank : "supersedes"
     agents ||--o{ audit_logs : "sujeito de"
     agents ||--o{ corporate_memory : "autor de"
+    agents ||--o| chief_profiles : "persona de"
+    agents ||--o{ subagent_requests : "solicita"
+    talent_bank ||--o{ subagent_requests : "atende"
 
     agents {
         uuid id PK
@@ -243,14 +333,66 @@ erDiagram
     }
     talent_bank {
         uuid id PK
-        string slug UK
+        string slug
+        int version
+        bool is_active
+        uuid supersedes_id FK
         string role_title
         text system_prompt
         jsonb tools
+        jsonb keywords
         enum complexity
         string recommended_model
         int usage_count
+        int rating_sum
+        int rating_count
+        jsonb task_history
         timestamptz last_used_at
+    }
+    chief_profiles {
+        uuid id PK
+        enum role UK
+        uuid agent_id FK
+        string headline
+        text mission
+        text reasoning_style
+        jsonb objectives
+        jsonb decision_criteria
+        jsonb context_memory
+        int priority
+        enum default_complexity
+    }
+    chief_communications {
+        uuid id PK
+        uuid thread_id
+        enum kind
+        enum from_role
+        enum to_role
+        string topic
+        text content
+        text rationale
+        string verdict
+        int confidence
+        jsonb payload
+    }
+    subagent_requests {
+        uuid id PK
+        enum requested_by_role
+        uuid requester_agent_id FK
+        string job_title
+        text objective
+        jsonb deliverables
+        jsonb tools
+        jsonb constraints
+        enum complexity
+        enum status
+        jsonb clarifications
+        enum nature_decision
+        string granted_model
+        int queue_position
+        uuid talent_profile_id FK
+        bool reused_profile
+        uuid created_agent_id FK
     }
     audit_logs {
         bigint id PK
@@ -284,10 +426,12 @@ erDiagram
 | `DateTime(timezone=True)` + `datetime.now(UTC)` | Nenhum timestamp ingênuo entra no banco |
 | `MetaData(naming_convention=...)` | Nomes determinísticos de índices/FKs → diffs de migração estáveis |
 | `ondelete="SET NULL"` nas FKs de agente | A demissão de um subagente não apaga sua trilha de auditoria |
+| Unicidade `(slug, version)` em `talent_bank` | Permite versionar metaprompts sem perder o histórico |
+| Tipos enum reaproveitados nas migrações (`create_type=False`) | PostgreSQL falha ao recriar um tipo existente; a 0002 só cria `communication_kind`, `request_status` e `nature_decision` |
 
 **Migrações:** o Alembic lê a URL do banco de `Settings` (nunca de `alembic.ini`), e o
-`entrypoint.sh` executa `alembic upgrade head` antes de subir o Uvicorn. A revisão base é
-`0001_schema_inicial`.
+`entrypoint.sh` executa `alembic upgrade head` antes de subir o Uvicorn. Revisões:
+`0001_schema_inicial` → `0002_fase_2_sociedade`.
 
 ---
 
@@ -332,41 +476,87 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant RA as RA (Fase 2)
-    participant R as POST /resources/hiring/evaluate
+    participant C as Chief
+    participant R as POST /hiring/requests
+    participant RA as ra_service
     participant N as NatureManager
-    participant Cat as model_catalog
+    participant TB as talent_bank
     participant DB as PostgreSQL
 
-    RA->>R: {job_title, complexity, requested_model?}
-    R->>DB: count_active_subagents()
-    R->>N: evaluate_hiring(request, active_subagents)
-    N->>N: snapshot() — psutil + GPUtil
-    N->>Cat: best_fit_within(teto, orçamento)
-    Cat-->>N: ModelSpec | None
-    N-->>R: HiringVerdict {decision, granted_model, narrative}
-    R->>DB: record_event(NATURE_DECISION, snapshot)
-    R->>DB: commit
-    R-->>RA: 200 HiringVerdictResponse
+    C->>R: {requested_by, job_title, objective, deliverables}
+    R->>RA: submit_request(intake)
+    RA->>DB: SubagentRequest(status=DRAFT) + SUBAGENT_REQUESTED
+    RA->>RA: screen(intake)
+    alt Pedido vago
+        RA->>DB: status=NEEDS_CLARIFICATION + SUBAGENT_CLARIFICATION
+        RA-->>C: perguntas (nenhum recurso consumido)
+    else Pedido acionável
+        RA->>RA: classify() → TaskComplexity
+        RA->>N: evaluate_hiring(complexidade, modelo)
+        N-->>RA: HiringVerdict {decision, granted_model, narrative}
+        RA->>DB: NATURE_DECISION + snapshot
+        alt QUEUED / BLOCKED
+            RA-->>C: vaga represada com narrativa corporativa
+        else ALLOWED / DOWNGRADED
+            RA->>TB: search(cargo, especialização)
+            TB-->>RA: perfil reaproveitado ou metaprompt novo
+            RA->>DB: Agent(SUBAGENT) + AGENT_CREATED
+            RA-->>C: subagente contratado, reportando ao Chief
+        end
+    end
+```
+
+### 7.3 Deliberação do conselho
+
+```mermaid
+sequenceDiagram
+    participant U as POST /council/deliberate
+    participant CS as council_service
+    participant T as CTO / CMO / CFO
+    participant CEO as CEO
+    participant DB as PostgreSQL
+
+    U->>CS: Proposal {topic, description}
+    CS->>DB: ChiefCommunication(DIRECTIVE)
+    loop Cada diretoria
+        CS->>T: analyze(proposal)
+        T-->>CS: ChiefOpinion {stance, confidence, concerns}
+        CS->>DB: ChiefCommunication(ANALYSIS)
+    end
+    CS->>CEO: _resolve(pareceres)
+    Note over CEO: veto do CTO é bloqueante;<br/>maioria favorável → aprovação condicionada
+    CEO-->>CS: CouncilOutcome + condições
+    CS->>DB: ChiefCommunication(DECISION) + COUNCIL_DELIBERATION
+    CS-->>U: CouncilDecision
 ```
 
 ---
 
 ## 8. Estratégia de Testes
 
-**66 testes, todos offline e determinísticos.** Nenhum toca rede, GPU ou PostgreSQL real.
+**168 testes, todos offline e determinísticos — 98% de cobertura.** Nenhum toca rede, GPU ou
+PostgreSQL real.
 
 | Arquivo | Cobre |
 |---------|-------|
-| `test_nature_manager.py` | Cálculo de orçamento, classificação de status, downgrade, bloqueio, fila |
-| `test_model_catalog.py` | Integridade do catálogo e regra de seleção por complexidade |
-| `test_settings.py` | Validação de configuração e propriedades derivadas |
+| `test_nature_manager.py` | Orçamento, teto por regime, bloqueio, fila FIFO e alertas |
+| `test_api_fase2.py` | Conselho, RA, Banco de Talentos, Natureza e fluxo ponta a ponta |
+| `test_ra_service.py` | Triagem, esclarecimento, contratação, demissão, carga e concorrência |
+| `test_talent_bank.py` | Slug, palavras-chave, busca, versionamento, uso e avaliação |
+| `test_council_service.py` | Raciocínio de cada persona, veto do CTO e desempate do CEO |
+| `test_model_catalog.py` | Integridade do catálogo, seleção por complexidade e `tier_below` |
+| `test_api.py` | Endpoints da Fase 1, incluindo cenários de degradação |
 | `test_persistence.py` | Schema do banco, idempotência de `init_chiefs`, auditoria, memória |
-| `test_api.py` | Todos os endpoints HTTP, incluindo cenários de degradação |
+| `test_complexity_classifier.py` | Heurística lexical, ajustes de escopo e piso por cargo |
+| `test_settings.py` | Validação de configuração e propriedades derivadas |
 | `test_ollama_client.py` | Parsing e tolerância a falhas do cliente Ollama |
 
 **Dublês:** SQLite em memória (`StaticPool`) para o banco; `httpx.MockTransport` para o Ollama;
 sondas lambda para o hardware. A substituição é feita via `app.dependency_overrides`.
+
+**Concorrência:** exercitada sobre o `NatureManager` (`ThreadPoolExecutor`), que é o estado
+mutável compartilhado. A escrita no banco permanece sequencial nos testes porque a `Session`
+do SQLAlchemy não é thread-safe.
 
 ---
 
@@ -374,8 +564,8 @@ sondas lambda para o hardware. A substituição é feita via `app.dependency_ove
 
 | Fase | Onde encaixa |
 |------|--------------|
-| **2 — Societária** | `services/` ganha `ra_service.py` (Banco de Talentos) e `council_service.py` (framework de decisão). Os `TalentProfile` já têm schema e tabela prontos. |
-| **3 — Observabilidade** | Callbacks ReAct serializados em `corporate_memory` / nova tabela `thought_traces`; `audit_logs.payload` (JSONB) já comporta o formato intermediário. |
+| **2 — Societária** | ✅ Concluída: `council_service.py`, `ra_service.py`, `talent_bank.py`, `complexity_classifier.py` e `prompt_factory.py`. |
+| **3 — Observabilidade** | Callbacks ReAct serializados em `corporate_memory` / nova tabela `thought_traces`; `audit_logs.payload` e `chief_communications.payload` (JSONB) já comportam o formato intermediário. |
 | **4 — Motor 2D** | `routes/ws.py` com WebSocket; Redis (já provisionado) atua como pub/sub entre workers; CORS já liberado para `localhost:3000`. |
 
 ---
@@ -388,3 +578,5 @@ sondas lambda para o hardware. A substituição é feita via `app.dependency_ove
 | `NatureManager` é singleton em memória | A fila de contratações não sobrevive a um restart | Redis já está provisionado para persistir a fila na Fase 2 |
 | SQLAlchemy síncrono em rotas async | Handlers de banco rodam no threadpool | Adequado para a escala local; migrar para `asyncpg` só se houver gargalo medido |
 | `psutil` lê a RAM do host, não do cgroup do container | Em hosts com limites de cgroup diferentes a leitura pode divergir | `NATURE_RAM_LIMIT_MB` permite fixar o teto manualmente |
+| Raciocinio dos Chiefs é lexical, não inferencial | Propostas com sinônimos fora das listas podem ser mal classificadas | Deliberação determinística é um requisito de auditoria; a inferência real entra na Fase 3 |
+| Subagentes ainda não executam tarefas via Ollama | O metaprompt é gerado e persistido, mas nenhuma inferência é disparada | `OllamaClient.generate()/chat()` entra na Fase 3 junto com a interceptação ReAct |

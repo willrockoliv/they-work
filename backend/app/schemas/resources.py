@@ -61,3 +61,20 @@ class HiringVerdictResponse(BaseModel):
     narrative: str
     queue_position: int | None
     resources: ResourceStatusResponse
+
+
+class NatureAlertRead(BaseModel):
+    """Alerta corporativo estruturado emitido pela Natureza."""
+
+    code: str
+    severity: ResourceStatus
+    message: str
+    narrative: str
+
+
+class NatureAlertsResponse(BaseModel):
+    """Alertas ativos no momento da consulta."""
+
+    total: int
+    status: ResourceStatus
+    alerts: list[NatureAlertRead] = Field(default_factory=list)

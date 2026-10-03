@@ -8,7 +8,7 @@ O usuário é um **observador onisciente**: acompanha as decisões do conselho, 
 raciocínio de cada agente e vê o escritório funcionando. Nada disso escapa dos limites
 físicos do hardware — e é exatamente aí que entra **A Natureza**.
 
-> Documentação completa: [PRD](docs/PRD.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Setup e troubleshooting](docs/SETUP.md)
+> Documentação completa: [PRD](docs/PRD.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Setup e troubleshooting](docs/SETUP.md) · [Lógica dos Chiefs](docs/CHIEF-LOGIC.md) · [Banco de Talentos](docs/TALENT-BANK.md) · [Fluxo de contratação](docs/HIRING-FLOW.md)
 
 ---
 
@@ -65,7 +65,9 @@ Pronto. A documentação interativa da API fica em <http://localhost:8000/docs>.
 
 ---
 
-## Endpoints da Fase 1
+## Endpoints
+
+### Fase 1 — Motor base
 
 | Método | Rota | O que faz |
 |--------|------|-----------|
@@ -77,6 +79,26 @@ Pronto. A documentação interativa da API fica em <http://localhost:8000/docs>.
 | `GET` | `/agents/status` | Quadro de funcionários da empresa |
 | `GET` | `/models/available` | Catálogo cruzado com o que está baixado no Ollama |
 | `GET` | `/models/select` | Modelo recomendado para uma complexidade de tarefa |
+
+### Fase 2 — Estruturação societária
+
+| Método | Rota | O que faz |
+|--------|------|-----------|
+| `POST` | `/council/profiles/init` | Materializa os perfis das personas C-Level |
+| `GET` | `/council/profiles` | Perfis do conselho, por prioridade |
+| `POST` | `/council/deliberate` | Submete uma pauta à deliberação do conselho |
+| `GET` | `/council/communications` | Histórico de falas entre os Chiefs |
+| `POST` | `/council/profiles/{role}/memory` | Grava um fato na memória de um Chief |
+| `POST` | `/hiring/requests` | Abre uma vaga junto ao RA |
+| `POST` | `/hiring/requests/{id}/clarify` | Responde aos questionamentos do RA |
+| `GET` | `/hiring/requests` | Lista as requisições de contratação |
+| `POST` | `/agents/subagents/{id}/dismiss` | Demite um subagente ao fim da sprint |
+| `GET` | `/talent/profiles` | Banco de Talentos |
+| `GET` | `/talent/profiles/search` | Procura um perfil reaproveitável |
+| `GET` | `/talent/profiles/{slug}/versions` | Histórico de versões de um perfil |
+| `POST` | `/talent/profiles/{id}/rating` | Avalia o desempenho de um perfil |
+| `POST` | `/nature/audit-request` | Auditoria isolada da Natureza |
+| `GET` | `/nature/alerts` | Alertas corporativos estruturados |
 
 ---
 
@@ -122,7 +144,7 @@ docker compose exec backend alembic upgrade head
 
 - [x] **Fase 1 — Motor Base e Isolamento:** Docker Compose, PostgreSQL, Ollama, backend
   FastAPI e a Natureza.
-- [ ] **Fase 2 — Estruturação Societária:** personas C-Level, framework de decisão,
-  Banco de Talentos do RA.
+- [x] **Fase 2 — Estruturação Societária:** personas C-Level com veto e desempate,
+  pipeline de contratação do RA, Banco de Talentos versionado e seleção dinâmica de modelos.
 - [ ] **Fase 3 — Transparência:** interceptação do fluxo ReAct de cada agente.
 - [ ] **Fase 4 — Motor 2D:** escritório top-down, avatares, raio-X cognitivo via WebSocket.

@@ -100,6 +100,24 @@ class HiringVerdict:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class NatureAlert:
+    """Aviso corporativo estruturado, pronto para injetar no contexto dos agentes."""
+
+    code: str
+    severity: ResourceStatus
+    message: str
+    narrative: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "severity": self.severity.value,
+            "message": self.message,
+            "narrative": self.narrative,
+        }
+
+
 def _psutil_ram_probe() -> tuple[int, int]:
     memory = psutil.virtual_memory()
     return memory.total // _BYTES_IN_MB, (memory.total - memory.available) // _BYTES_IN_MB
@@ -214,60 +232,45 @@ class NatureManager:
             )
 
         budget_mb = snapshot.ram_allocatable_mb
+        ceiling = self._ceiling_for(preferred, snapshot.status)
+        granted = model_catalog.best_fit_within(ceiling, budget_mb)
 
-        if snapshot.status is ResourceStatus.CRITICAL:
-            fallback = model_catalog.lightest_model()
-            if fallback.ram_mb > budget_mb:
-                return self._defer(
-                    request,
-                    snapshot,
-                    reason="Recursos críticos: nem o modelo mais leve cabe no orçamento.",
-                    narrative=(
-                        "A infraestrutura da empresa atingiu a capacidade máxima. "
-                        f"A contratação de '{request.job_title}' foi bloqueada até que o "
-                        "projeto atual seja finalizado."
-                    ),
-                )
-            return self._verdict(
-                NatureDecision.DOWNGRADED,
-                request,
-                snapshot,
-                fallback,
-                reason=(
-                    f"Recursos críticos ({snapshot.ram_usage_ratio:.0%} de RAM em uso): "
-                    f"otimização forçada de '{preferred.name}' para '{fallback.name}'."
-                ),
-                narrative=(
-                    "Em regime de contenção de custos, a diretoria aprovou a vaga apenas "
-                    f"com o perfil mais enxuto ({fallback.display_name}) em vez de "
-                    f"{preferred.display_name}."
-                ),
-            )
-
-        granted = model_catalog.best_fit_within(preferred, budget_mb)
         if granted is None:
             return self._defer(
                 request,
                 snapshot,
-                reason=f"Orçamento de {budget_mb} MB insuficiente para qualquer modelo.",
-                narrative=(
-                    "Não há orçamento de infraestrutura para mais um colaborador. "
-                    f"A vaga de '{request.job_title}' entrou em espera."
+                reason=(
+                    f"Orçamento de {budget_mb} MB insuficiente para o teto '{ceiling.name}' "
+                    f"em regime {snapshot.status.value}."
                 ),
+                narrative=_NO_BUDGET_NARRATIVE[snapshot.status].format(job=request.job_title),
             )
 
         if granted.tier < preferred.tier:
+            contained = ceiling.tier < preferred.tier
             return self._verdict(
                 NatureDecision.DOWNGRADED,
                 request,
                 snapshot,
                 granted,
                 reason=(
-                    f"'{preferred.name}' exige {preferred.ram_mb} MB, disponível {budget_mb} MB."
+                    f"Regime de contenção ({snapshot.ram_usage_ratio:.0%} de RAM em uso): "
+                    f"teto rebaixado de '{preferred.name}' para '{ceiling.name}'."
+                    if contained
+                    else (
+                        f"'{preferred.name}' exige {preferred.ram_mb} MB, "
+                        f"disponível {budget_mb} MB."
+                    )
                 ),
                 narrative=(
-                    f"O orçamento aprovado não comporta {preferred.display_name}; "
-                    f"a vaga foi preenchida com {granted.display_name}."
+                    "Em regime de contenção de custos, a diretoria aprovou a vaga apenas com "
+                    f"o perfil mais enxuto ({granted.display_name}) em vez de "
+                    f"{preferred.display_name}."
+                    if contained
+                    else (
+                        f"O orçamento aprovado não comporta {preferred.display_name}; "
+                        f"a vaga foi preenchida com {granted.display_name}."
+                    )
                 ),
             )
 
@@ -289,6 +292,18 @@ class NatureManager:
             if explicit is not None:
                 return explicit
         return model_catalog.preferred_for(request.complexity)
+
+    def _ceiling_for(self, preferred: ModelSpec, status: ResourceStatus) -> ModelSpec:
+        """Teto de contratação ajustado ao regime da infraestrutura.
+
+        Rebaixar o teto (em vez de desviar para um ramo próprio) mantém uma única regra de
+        seleção: o orçamento continua decidindo, o regime só limita o quão longe ele vai.
+        """
+        if status is ResourceStatus.CRITICAL:
+            return model_catalog.lightest_model()
+        if status is ResourceStatus.WARNING:
+            return model_catalog.tier_below(preferred)
+        return preferred
 
     def _verdict(
         self,
@@ -374,6 +389,82 @@ class NatureManager:
         with self._lock:
             self._queue.clear()
 
+    # --- Alertas -------------------------------------------------------------
+
+    def alerts(
+        self, snapshot: ResourceSnapshot | None = None, *, active_subagents: int = 0
+    ) -> tuple[NatureAlert, ...]:
+        """Avisos que a Natureza injeta no contexto da empresa no estado atual."""
+        current = snapshot or self.snapshot()
+        found: list[NatureAlert] = []
+
+        if current.status is ResourceStatus.CRITICAL:
+            found.append(
+                NatureAlert(
+                    code="CAPACITY_EXHAUSTED",
+                    severity=ResourceStatus.CRITICAL,
+                    message="Capacidade máxima de infraestrutura atingida.",
+                    narrative=(
+                        "A infraestrutura da empresa atingiu a capacidade máxima. Novas "
+                        "contratações estão bloqueadas até que o projeto atual seja finalizado."
+                    ),
+                )
+            )
+        elif current.status is ResourceStatus.WARNING:
+            found.append(
+                NatureAlert(
+                    code="CAPACITY_WARNING",
+                    severity=ResourceStatus.WARNING,
+                    message="Infraestrutura próxima do limite operacional.",
+                    narrative=(
+                        "O consumo de infraestrutura se aproxima do teto aprovado. A diretoria "
+                        "deve priorizar perfis mais enxutos nas próximas contratações."
+                    ),
+                )
+            )
+
+        if active_subagents >= self.settings.nature_max_concurrent_subagents:
+            found.append(
+                NatureAlert(
+                    code="HEADCOUNT_FULL",
+                    severity=ResourceStatus.CRITICAL,
+                    message="Quadro de subagentes lotado.",
+                    narrative=(
+                        "Todas as estações de trabalho estão ocupadas. Qualquer nova vaga "
+                        "aguardará a demissão de um colaborador em atividade."
+                    ),
+                )
+            )
+
+        queued = len(self.pending())
+        if queued:
+            found.append(
+                NatureAlert(
+                    code="HIRING_QUEUE",
+                    severity=ResourceStatus.WARNING,
+                    message=f"{queued} contratação(ões) represada(s).",
+                    narrative=(
+                        f"O RH mantém {queued} vaga(s) em espera por falta de orçamento de "
+                        "infraestrutura."
+                    ),
+                )
+            )
+
+        if current.gpu_detected and current.vram_allocatable_mb <= 0:
+            found.append(
+                NatureAlert(
+                    code="VRAM_EXHAUSTED",
+                    severity=ResourceStatus.CRITICAL,
+                    message="VRAM alocada integralmente.",
+                    narrative=(
+                        "A aceleração por GPU está indisponível; os colaboradores passarão a "
+                        "operar em ritmo reduzido até a liberação de memória de vídeo."
+                    ),
+                )
+            )
+
+        return tuple(found)
+
 
 _STATUS_NARRATIVE: dict[ResourceStatus, str] = {
     ResourceStatus.HEALTHY: (
@@ -386,6 +477,21 @@ _STATUS_NARRATIVE: dict[ResourceStatus, str] = {
     ResourceStatus.CRITICAL: (
         "A infraestrutura da empresa atingiu a capacidade máxima. Contratações estão "
         "congeladas até a conclusão dos projetos em andamento."
+    ),
+}
+
+_NO_BUDGET_NARRATIVE: dict[ResourceStatus, str] = {
+    ResourceStatus.HEALTHY: (
+        "Não há orçamento de infraestrutura para mais um colaborador. "
+        "A vaga de '{job}' entrou em espera."
+    ),
+    ResourceStatus.WARNING: (
+        "O orçamento de infraestrutura chegou ao limite aprovado. "
+        "A vaga de '{job}' entrou em espera até a liberação de recursos."
+    ),
+    ResourceStatus.CRITICAL: (
+        "A infraestrutura da empresa atingiu a capacidade máxima. A contratação de "
+        "'{job}' foi bloqueada até que o projeto atual seja finalizado."
     ),
 }
 

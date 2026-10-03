@@ -1,4 +1,4 @@
-"""Endpoints da Natureza — status de recursos e governança de contratações."""
+"""Endpoints da auditoria da Natureza sobre as requisições do RA."""
 
 from __future__ import annotations
 
@@ -6,37 +6,28 @@ from fastapi import APIRouter
 
 from app.models.enums import AuditEventType
 from app.routes.deps import DbSession, Nature
+from app.routes.resources import build_resource_status
 from app.schemas.resources import (
     HiringEvaluationRequest,
     HiringVerdictResponse,
-    ResourceStatusResponse,
+    NatureAlertRead,
+    NatureAlertsResponse,
 )
 from app.services import agent_service, audit_service
-from app.services.nature_manager import HiringRequest, NatureManager, ResourceSnapshot
+from app.services.nature_manager import HiringRequest
 
-router = APIRouter(prefix="/resources", tags=["natureza"])
-
-
-@router.get("/status", response_model=ResourceStatusResponse, summary="Status dos recursos")
-def resource_status(nature: Nature, session: DbSession) -> ResourceStatusResponse:
-    """Leitura atual de RAM, VRAM e CPU com a narrativa corporativa correspondente."""
-    snapshot = nature.snapshot()
-    return build_resource_status(
-        snapshot,
-        nature,
-        active_subagents=agent_service.count_active_subagents(session),
-    )
+router = APIRouter(prefix="/nature", tags=["natureza"])
 
 
 @router.post(
-    "/hiring/evaluate",
+    "/audit-request",
     response_model=HiringVerdictResponse,
-    summary="Submeter requisição de contratação à Natureza",
+    summary="Auditoria da Natureza sobre uma requisição do RA",
 )
-def evaluate_hiring(
+def audit_request(
     payload: HiringEvaluationRequest, nature: Nature, session: DbSession
 ) -> HiringVerdictResponse:
-    """Decide se o RA pode contratar, com qual modelo, ou se a vaga fica represada."""
+    """Aprova, rebaixa o modelo, enfileira ou bloqueia a contratação, com justificativa."""
     active_subagents = agent_service.count_active_subagents(session)
     verdict = nature.evaluate_hiring(
         HiringRequest(
@@ -53,7 +44,7 @@ def evaluate_hiring(
         event_type=AuditEventType.NATURE_DECISION,
         actor="NATURE",
         decision=verdict.decision.value,
-        summary=f"{verdict.decision.value}: {payload.job_title}",
+        summary=f"Auditoria {verdict.decision.value}: {payload.job_title}",
         narrative=verdict.narrative,
         resource_snapshot=verdict.snapshot.to_dict(),
         payload={
@@ -62,6 +53,8 @@ def evaluate_hiring(
             "requested_model": payload.requested_model,
             "granted_model": verdict.granted_model,
             "reason": verdict.reason,
+            "downgraded": verdict.granted_model != payload.requested_model
+            and payload.requested_model is not None,
         },
     )
     session.commit()
@@ -83,12 +76,18 @@ def evaluate_hiring(
     )
 
 
-def build_resource_status(
-    snapshot: ResourceSnapshot, nature: NatureManager, *, active_subagents: int
-) -> ResourceStatusResponse:
-    """Enriquece a fotografia da Natureza com os contadores do quadro de pessoal."""
-    data = snapshot.to_dict()
-    data["queued_hirings"] = len(nature.pending())
-    data["active_subagents"] = active_subagents
-    data["max_concurrent_subagents"] = nature.settings.nature_max_concurrent_subagents
-    return ResourceStatusResponse.model_validate(data)
+@router.get(
+    "/alerts",
+    response_model=NatureAlertsResponse,
+    summary="Alertas corporativos emitidos pela Natureza",
+)
+def list_alerts(nature: Nature, session: DbSession) -> NatureAlertsResponse:
+    """Avisos estruturados prontos para injeção no contexto dos agentes."""
+    active_subagents = agent_service.count_active_subagents(session)
+    snapshot = nature.snapshot()
+    alerts = nature.alerts(snapshot, active_subagents=active_subagents)
+    return NatureAlertsResponse(
+        total=len(alerts),
+        status=snapshot.status,
+        alerts=[NatureAlertRead.model_validate(alert.to_dict()) for alert in alerts],
+    )

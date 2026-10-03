@@ -89,6 +89,44 @@ class TestHiringGovernance:
         assert verdict.decision is NatureDecision.DOWNGRADED
         assert verdict.granted_model == "llama3.2:3b"
 
+    def test_regime_de_atencao_rebaixa_o_teto_em_um_tier(self) -> None:
+        # Orçamento comporta o DeepSeek R1, mas o regime WARNING limita o teto ao Qwen3.
+        settings = Settings(nature_ram_limit_mb=32_768, nature_reserved_ram_mb=1_024)
+        nature = make_nature(ram_total=32_768, ram_used=25_000, settings=settings)
+        snapshot = nature.snapshot()
+        verdict = nature.evaluate_hiring(_request(TaskComplexity.CRITICAL))
+
+        assert snapshot.status is ResourceStatus.WARNING
+        assert snapshot.ram_allocatable_mb > 5_120  # o modelo preferido caberia
+        assert verdict.decision is NatureDecision.DOWNGRADED
+        assert verdict.granted_model == "qwen3:8b"
+        assert "contenção" in verdict.narrative
+
+    def test_reserva_domina_os_limiares_na_configuracao_do_projeto(self) -> None:
+        """Com 16 GB e 2 GB de reserva, sair de HEALTHY já zera o orçamento.
+
+        `reserva + modelo_mais_leve (4096 MB) > (1 - 0.75) * 16384`, então o regime de
+        contenção nunca chega a conceder um modelo: a vaga é represada antes disso.
+        """
+        nature = make_nature(ram_used=13_000)
+        snapshot = nature.snapshot()
+        verdict = nature.evaluate_hiring(_request(TaskComplexity.CRITICAL))
+
+        assert snapshot.status is ResourceStatus.WARNING
+        assert snapshot.ram_allocatable_mb < 2_048
+        assert verdict.decision is NatureDecision.QUEUED
+
+    def test_vram_saturada_rebaixa_o_modelo_mesmo_sobrando_ram(self) -> None:
+        """O orçamento só enxerga RAM; a pressão de VRAM chega pelo teto do regime."""
+        nature = make_nature(ram_used=5_000, vram_used=4_000)
+        snapshot = nature.snapshot()
+        verdict = nature.evaluate_hiring(_request(TaskComplexity.CRITICAL))
+
+        assert snapshot.status is ResourceStatus.CRITICAL
+        assert snapshot.ram_allocatable_mb > 5_120  # o DeepSeek R1 caberia na RAM
+        assert verdict.decision is NatureDecision.DOWNGRADED
+        assert verdict.granted_model == "llama3.2:3b"
+
     def test_bloqueia_e_enfileira_quando_nao_ha_orcamento(self) -> None:
         nature = make_nature(ram_used=15_000)
         verdict = nature.evaluate_hiring(_request())
@@ -138,3 +176,44 @@ class TestQueue:
         nature.enqueue(_request())
         nature.clear_queue()
         assert nature.pending() == ()
+
+
+class TestAlerts:
+    def test_infraestrutura_saudavel_nao_alerta(self) -> None:
+        assert make_nature().alerts() == ()
+
+    def test_alerta_de_atencao(self) -> None:
+        alertas = make_nature(ram_total=16_384, ram_used=12_500).alerts()
+
+        assert [alerta.code for alerta in alertas] == ["CAPACITY_WARNING"]
+        assert alertas[0].severity is ResourceStatus.WARNING
+
+    def test_alerta_de_capacidade_esgotada(self) -> None:
+        alertas = make_nature(ram_total=16_384, ram_used=16_000).alerts()
+
+        assert any(alerta.code == "CAPACITY_EXHAUSTED" for alerta in alertas)
+
+    def test_alerta_de_quadro_lotado(self) -> None:
+        nature = make_nature()
+
+        alertas = nature.alerts(
+            active_subagents=nature.settings.nature_max_concurrent_subagents
+        )
+
+        assert any(alerta.code == "HEADCOUNT_FULL" for alerta in alertas)
+
+    def test_alerta_de_fila_de_contratacoes(self) -> None:
+        nature = make_nature()
+        nature.enqueue(_request())
+
+        assert any(alerta.code == "HIRING_QUEUE" for alerta in nature.alerts())
+
+    def test_alerta_de_vram_esgotada(self) -> None:
+        alertas = make_nature(vram_total=4_096, vram_used=4_000).alerts()
+
+        assert any(alerta.code == "VRAM_EXHAUSTED" for alerta in alertas)
+
+    def test_alerta_e_serializavel(self) -> None:
+        alerta = make_nature(ram_total=16_384, ram_used=16_000).alerts()[0]
+
+        assert alerta.to_dict()["severity"] == ResourceStatus.CRITICAL.value

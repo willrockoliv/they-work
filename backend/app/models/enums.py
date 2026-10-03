@@ -59,6 +59,46 @@ class NatureDecision(StrEnum):
     BLOCKED = "BLOCKED"
 
 
+class CommunicationKind(StrEnum):
+    """Natureza de uma mensagem trocada no conselho administrativo."""
+
+    DIRECTIVE = "DIRECTIVE"
+    ANALYSIS = "ANALYSIS"
+    DECISION = "DECISION"
+    QUESTION = "QUESTION"
+    ANSWER = "ANSWER"
+    REPORT = "REPORT"
+    ESCALATION = "ESCALATION"
+
+
+class RequestStatus(StrEnum):
+    """Ciclo de vida de uma requisição de subagente aberta por um Chief."""
+
+    DRAFT = "DRAFT"
+    NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
+    CLARIFIED = "CLARIFIED"
+    QUEUED = "QUEUED"
+    FULFILLED = "FULFILLED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class CouncilStance(StrEnum):
+    """Posição individual de um Chief numa deliberação."""
+
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    ABSTAIN = "ABSTAIN"
+
+
+class CouncilOutcome(StrEnum):
+    """Veredito consolidado do conselho, dado pelo CEO."""
+
+    APPROVED = "APPROVED"
+    APPROVED_WITH_CONDITIONS = "APPROVED_WITH_CONDITIONS"
+    REJECTED = "REJECTED"
+
+
 class AuditEventType(StrEnum):
     """Categorias de evento registradas na trilha de auditoria."""
 
@@ -69,6 +109,13 @@ class AuditEventType(StrEnum):
     AGENT_STATUS_CHANGED = "AGENT_STATUS_CHANGED"
     MODEL_SELECTED = "MODEL_SELECTED"
     SYSTEM = "SYSTEM"
+    CHIEF_COMMUNICATION = "CHIEF_COMMUNICATION"
+    COUNCIL_DELIBERATION = "COUNCIL_DELIBERATION"
+    SUBAGENT_REQUESTED = "SUBAGENT_REQUESTED"
+    SUBAGENT_CLARIFICATION = "SUBAGENT_CLARIFICATION"
+    TALENT_PROFILE_CREATED = "TALENT_PROFILE_CREATED"
+    TALENT_PROFILE_REUSED = "TALENT_PROFILE_REUSED"
+    TALENT_PROFILE_RATED = "TALENT_PROFILE_RATED"
 
 
 class MemoryType(StrEnum):

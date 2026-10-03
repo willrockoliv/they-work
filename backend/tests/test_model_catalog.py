@@ -64,5 +64,18 @@ def test_lightest_model() -> None:
     assert model_catalog.lightest_model().name == "llama3.2:3b"
 
 
+def test_tier_below_retorna_o_modelo_imediatamente_mais_leve() -> None:
+    deepseek = model_catalog.get_model("deepseek-r1:8b")
+    assert deepseek is not None
+
+    assert model_catalog.tier_below(deepseek).name == "qwen3:8b"
+
+
+def test_tier_below_do_mais_leve_e_ele_mesmo() -> None:
+    llama = model_catalog.lightest_model()
+
+    assert model_catalog.tier_below(llama) is llama
+
+
 def test_get_model_desconhecido() -> None:
     assert model_catalog.get_model("gpt-inexistente") is None
