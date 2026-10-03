@@ -1,0 +1,22 @@
+# Override opcional para hospedar a inferência na GPU NVIDIA.
+# Requer o NVIDIA Container Toolkit instalado no host.
+# Uso: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Sem acesso ao driver, o GPUtil não enxerga a VRAM e a Natureza monitora apenas RAM.
+  backend:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [utility]

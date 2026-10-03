@@ -9,12 +9,22 @@ applyTo: "**/*"
 ## Visão Geral
 
 **Propósito do Repositório:**
-
+TheyWork — simulação corporativa sandbox onde agentes de IA autônomos fundam e operam uma empresa
+virtual. Roda 100% offline e conteinerizada. O usuário é observador onisciente. Uma entidade
+invisível ("A Natureza") traduz os limites físicos do hardware (16 GB RAM / 4 GB VRAM) em regras
+de negócio corporativas.
 
 **Stack & Tamanho:**
-
+Monorepo pequeno. Backend Python 3.14.8 (FastAPI 0.142.2, SQLAlchemy 2.1.3 síncrono, Alembic
+1.20.0, Pydantic 2.13.5, structlog). Infra: PostgreSQL 16.11, Redis 8.2.2, Ollama 0.12.11, tudo
+via Docker Compose. Frontend 2D (React/Vue) previsto apenas para a Fase 4 — ainda **não existe**.
 
 **Arquivos-chave na raiz:**
+- `pyproject.toml` — dependências, ruff, mypy, pytest (configuração única do projeto)
+- `docker-compose.yml` — stack principal (+ `.override.yml` dev, `.gpu.yml` NVIDIA)
+- `.env.example` — modelo de configuração; copie para `.env`
+- `scripts/pull_models.sh` — baixa os 5 modelos Ollama
+- `backend/` — código da aplicação, `alembic/` e `tests/`
 
 
 ## Instruções de Build, Execução e Validação
@@ -45,20 +55,25 @@ applyTo: "**/*"
 - Antes de validar fluxos no frontend, confirme que host e container estão sincronizados.
 
 ### Lint
-- **Python:** `ruff check .` ou `flake8 .` (se configurado)
-- **JS/TS:** `docker compose exec frontend npm run lint` (usa ESLint, config em `frontend/eslint.config.mjs`)
-- **Auto-fix:** `ruff check . --fix` ou `docker compose exec frontend npm run lint -- --fix`
+- **Python:** `ruff check .` (config em `pyproject.toml`)
+- **JS/TS:** `docker compose exec frontend npm run lint` (apenas a partir da Fase 4)
+- **Auto-fix:** `ruff check . --fix`
 
 ### Type Checking
-- **Python:** `mypy .` (se configurado)
-- **TypeScript:** `docker compose exec frontend npm run type-check` ou `docker compose exec frontend npx tsc --noEmit`
+- **Python:** `mypy` (modo estrito, configurado em `pyproject.toml`)
+- **TypeScript:** `docker compose exec frontend npm run type-check` (apenas a partir da Fase 4)
 
 ### Testes
-- **Backend:** `pytest` (unitário/integrado, usa SQLite in-memory para integração)
+- **Backend:** `pytest` (offline; SQLite in-memory + dublês de HTTP/hardware)
 
 ### Problemas Comuns & Workarounds
-- Sempre rode `npm install` antes de buildar o frontend.
-- Se ocorrerem erros de banco, garanta que as migrações estão atualizadas (`alembic upgrade head`).
+- Se o backend reiniciar em loop, confira se `POSTGRES_PASSWORD` e `DATABASE_URL` no `.env`
+  são coerentes entre si.
+- Migrações são aplicadas automaticamente pelo `backend/entrypoint.sh` no boot; para rodar
+  manualmente: `docker compose exec backend alembic upgrade head`.
+- PostgreSQL não publica porta no host (isolamento). Use `docker compose exec postgres psql`.
+- `gpu_detected: false` é esperado sem o override `docker-compose.gpu.yml`.
+- Troubleshooting completo: `docs/SETUP.md` §6.
 
 ### Validação de Frontend (Obrigatória para Agentes)
 - **Use o Integrated Browser do VS Code** para validar visual e comportamento das páginas localmente.
@@ -67,6 +82,27 @@ applyTo: "**/*"
 
 ## Estrutura & Arquitetura do Projeto
 
+```text
+backend/app/
+├── main.py      # create_app(), middleware, lifespan
+├── config/      # settings (pydantic-settings), logging (structlog), database (engine/sessão)
+├── models/      # ORM SQLAlchemy + enums de domínio (models/enums.py)
+├── schemas/     # contratos Pydantic da API
+├── services/    # regras de negócio: nature_manager, model_catalog, agent_service, audit_service, ollama_client
+└── routes/      # camada HTTP fina (health, resources, agents, models) + deps.py
+```
+
+**Regra de dependência (unidirecional):** `routes/ → services/ → models/ → config/`.
+`models/` nunca importa de `services/`; `services/` nunca importa de `routes/`.
+
+**Pontos de atenção ao editar:**
+- Tipos de coluna precisam funcionar em PostgreSQL **e** SQLite (testes). Use variantes de
+  dialeto — ver `models/base.py` e `audit.py`.
+- `Settings` é cacheado com `@lru_cache`; em testes, defina env vars **antes** de importar `app.*`.
+- `dependency_overrides` do FastAPI só aceita callables sem parâmetros (use `lambda: factory()`).
+- Nenhum teste pode tocar rede, GPU ou banco real.
+
+Detalhamento completo (diagramas, ADRs, fluxos, limitações): `docs/ARCHITECTURE.md`.
 
 ## Boas Práticas para Agentes
 - **Confie sempre nestas instruções primeiro.** Só pesquise se a informação estiver faltando ou incorreta.

@@ -1,0 +1,81 @@
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "theywork"
+version = "0.1.0"
+description = "Simulação corporativa sandbox operada por agentes de IA autônomos, 100% offline e conteinerizada."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = { text = "MIT" }
+
+dependencies = [
+    "fastapi==0.142.2",
+    "uvicorn[standard]==0.54.0",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "sqlalchemy==2.1.3",
+    "alembic==1.20.0",
+    "psycopg[binary]==3.3.6",
+    "redis==8.1.0",
+    "httpx==0.28.1",
+    "psutil==7.2.2",
+    "gputil==1.4.0",
+    "structlog==26.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.10",
+    "mypy==2.4.0",
+    "types-psutil==7.2.2.20260906",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/app"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+addopts = "-q --strict-markers"
+markers = [
+    "integration: testes que exercitam múltiplos componentes (DB, HTTP, Docker)",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["backend/app"]
+omit = ["backend/alembic/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = [".github", "backend/alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/*" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "backend"
+files = ["backend/app"]
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unused_ignores = true
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = ["GPUtil.*"]
+ignore_missing_imports = true
