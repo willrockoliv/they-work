@@ -27,6 +27,9 @@ os.environ.setdefault("REASONING_STREAM_BUFFER", "64")
 os.environ.setdefault("REASONING_RETENTION_DAYS", "30")
 os.environ.setdefault("REASONING_MAX_CONTENT_CHARS", "8000")
 
+os.environ.setdefault("GAME_TICK_SECONDS", "0.1")
+os.environ.setdefault("GAME_WALK_TILES_PER_SECOND", "3.0")
+
 import json
 from collections.abc import Iterator
 
@@ -44,6 +47,7 @@ from app.main import create_app
 from app.models import Base
 from app.routes.deps import get_ollama_client
 from app.services.nature_manager import NatureManager, get_nature_manager
+from app.services.office_map import get_office_map
 from app.services.ollama_client import OllamaClient
 from app.services.reasoning_broker import get_broker
 
@@ -159,10 +163,12 @@ def make_react_ollama(turns: list[str]) -> OllamaClient:
 
 @pytest.fixture(autouse=True)
 def _reset_broker() -> Iterator[None]:
-    """Nenhum assinante sobrevive de um teste para o outro."""
+    """Nenhum assinante nem lotação sobrevive de um teste para o outro."""
     get_broker().reset()
+    get_office_map().reset()
     yield
     get_broker().reset()
+    get_office_map().reset()
 
 
 @pytest.fixture

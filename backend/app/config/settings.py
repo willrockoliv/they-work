@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: LogFormat = "console"
 
+    # Origens do frontend 2D (Fase 4); porta 3000 em produção, 5173 no dev do Vite.
+    cors_allow_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+    )
+
     # --- Persistência --------------------------------------------------------
     database_url: str = "postgresql+psycopg://theywork:theywork@postgres:5432/theywork"
     database_pool_size: int = 5
@@ -64,6 +74,12 @@ class Settings(BaseSettings):
     reasoning_stream_buffer: int = Field(default=256, gt=0)
     reasoning_retention_days: int = Field(default=30, gt=0)
     reasoning_max_content_chars: int = Field(default=8_000, gt=0)
+
+    # --- Mundo 2D (Fase 4) ---------------------------------------------------
+    # Intervalo com que `/ws/game-state` recalcula o snapshot para detectar
+    # contratações, demissões e mudanças de regime que não emitem evento próprio.
+    game_tick_seconds: float = Field(default=2.0, gt=0)
+    game_walk_tiles_per_second: float = Field(default=3.0, gt=0)
 
     @field_validator("nature_critical_threshold")
     @classmethod

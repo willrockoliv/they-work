@@ -4,10 +4,7 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 
 ## .github/memories/exec-plans/backlog/ - planos para futuras implementações
 
-### [2026-10-03-fase-4-motor-2d-interface.md](backlog/2026-10-03-fase-4-motor-2d-interface.md)
-**Objetivo:** Criar interface 2D top-down do escritório virtual com avatares, balões de diálogo, painel de raio-X cognitivo e WebSocket em tempo real  
-**Status:** Pronto para iniciar  
-**Bloqueante:** ~~Fase 3~~ — desbloqueado
+*Nenhum plano no backlog.*
 
 
 ## .github/memories/exec-plans/active/ - planos em andamento
@@ -35,6 +32,12 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 **Entregas:** motor ReAct próprio sobre o streaming do Ollama (sem LangGraph/CrewAI — ADR-004) · `reasoning_sessions` + `reasoning_steps` com discriminador (ADR-005) · `ReasoningTracer` com os 4 callbacks e contabilidade de tokens · broker pub/sub in-process com backpressure (ADR-006) · 5 ferramentas offline com captura integral de entrada/saída · fluxograma com layout hints e aresta de ciclo · 9 endpoints REST + 2 canais WebSocket com replay · métricas de custo (MB·s) e ROI, retenção e export · fallback determinístico offline · migração `0003_fase_3_observabilidade` · 255 testes / 98% de cobertura  
 **Progresso:** [2026-10-03-fase-3-transparencia-observabilidade-progress.md](progress/2026-10-03-fase-3-transparencia-observabilidade-progress.md)
 
+### [2026-10-03-fase-4-motor-2d-interface.md](completed/2026-10-03-fase-4-motor-2d-interface.md)
+**Objetivo:** Criar a interface 2D top-down do escritório virtual com avatares, balões de diálogo, painel de raio-X cognitivo e WebSocket em tempo real  
+**Status:** ✅ Concluído em 2026-10-03  
+**Entregas:** planta de 40×24 tiles com lotação determinística em memória (ADR-010) · `game_service` como projeção de leitura + `diff()` de snapshots · 5 endpoints REST novos · canal único `WS /ws/game-state` reaproveitando o barramento da Fase 3 (ADR-011) · frontend Vite 8 + React 19 + PixiJS 8 + Zustand 5 com sprites procedurais (ADR-008/009) · avatares animados, balões FIFO, painel de raio-X com 3 abas, log de comunicações filtrável, notificações e atalhos de teclado · container próprio isolado na rede `edge` · 286 testes no backend + 69 no frontend  
+**Progresso:** [2026-10-03-fase-4-motor-2d-interface-progress.md](progress/2026-10-03-fase-4-motor-2d-interface-progress.md)
+
 
 ## .github/memories/exec-plans/archived/ - planos arquivados
 
@@ -60,4 +63,10 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 **Status:** ✅ Concluído  
 **Início:** 2026-10-03 · **Conclusão:** 2026-10-03  
 **Contém:** ADRs 004–007 (wrapper próprio vs. LangGraph/CrewAI, tabela única com discriminador, broker in-process, captura síncrona), armadilhas de thread-safety no pub/sub, `dependency_overrides` em WebSocket, tolerância do parser ReAct, definição de custo em MB·s e ROI, validação E2E com streaming real e 8 débitos técnicos mapeados
+
+### [2026-10-03-fase-4-motor-2d-interface-progress.md](progress/2026-10-03-fase-4-motor-2d-interface-progress.md)
+**Plano:** Fase 4 - Motor 2D e Interface  
+**Status:** ✅ Concluído  
+**Início:** 2026-10-03 · **Conclusão:** 2026-10-03  
+**Contém:** ADRs 008–011 (PixiJS vs. Babylon/Phaser/Canvas, sprites procedurais, posições em memória, reuso do barramento), armadilhas do ecossistema Node (peer deps do typescript-eslint, rolldown no Vite 8, `vi.mock` içado), seletor instável no Zustand que estoura o `useSyncExternalStore`, a regra `set-state-in-effect` do ESLint 10, colisão de `name`/`label` com `Container` do Pixi, ponte de enquadramento entre renderizador e store, relatório de validação E2E no navegador e 8 débitos técnicos mapeados
 

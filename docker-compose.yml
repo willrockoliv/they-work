@@ -108,3 +108,21 @@ services:
         condition: service_healthy
       ollama:
         condition: service_started
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: theywork-frontend:0.1.0
+    container_name: theywork-frontend
+    restart: unless-stopped
+    environment:
+      # Mesma origem: o dev server do Vite faz proxy de `/api` e `/ws` para o backend.
+      VITE_PROXY_TARGET: http://backend:8000
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    networks:
+      - edge
+    depends_on:
+      backend:
+        condition: service_started

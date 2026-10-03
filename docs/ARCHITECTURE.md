@@ -37,6 +37,18 @@ três serviços de apoio — PostgreSQL (estado), Redis (cache/fila) e Ollama (i
 | Monitoramento | psutil / GPUtil | 7.2.2 / 1.4.0 |
 | Logging | structlog | 26.1.0 |
 
+**Frontend 2D (Fase 4)**
+
+| Camada | Tecnologia | Versão |
+|--------|-----------|--------|
+| Runtime | Node | 22.23.3-alpine |
+| Build | Vite | 8.3.2 |
+| UI | React / TypeScript | 19.3.0 / 5.9.3 |
+| Canvas 2D | PixiJS | 8.22.0 |
+| Estado | Zustand | 5.0.15 |
+| Testes | Vitest / Testing Library | 5.0.3 / 16.3.3 |
+| Lint & formato | ESLint / Prettier | 10.12.0 / 3.9.9 |
+
 ---
 
 ## 2. Topologia de Containers e Redes
@@ -44,10 +56,11 @@ três serviços de apoio — PostgreSQL (estado), Redis (cache/fila) e Ollama (i
 ```mermaid
 flowchart TB
     subgraph host["Host (127.0.0.1)"]
-        user["Usuário / Frontend 2D (Fase 4)"]
+        user["Usuário (navegador)"]
     end
 
     subgraph edge["rede: edge (bridge)"]
+        frontend["frontend<br/>Vite :3000"]
         backend["backend<br/>FastAPI :8000"]
     end
 
@@ -60,8 +73,9 @@ flowchart TB
         ollama["ollama<br/>:11434"]
     end
 
-    user -->|"127.0.0.1:8000"| backend
-    user -.->|"127.0.0.1:11434 (debug)"| ollama
+    user -->|"127.0.0.1:3000"| frontend
+    user -.->|"127.0.0.1:8000 (API direta)"| backend
+    frontend -->|"proxy /api e /ws"| backend
     backend --> postgres
     backend --> redis
     backend --> ollama
@@ -79,6 +93,10 @@ pode operar indefinidamente offline.
 
 **Decisão (ADR-003):** todas as portas publicadas são vinculadas a `127.0.0.1`, nunca a
 `0.0.0.0`. A simulação não é exposta à LAN.
+
+O `frontend` vive apenas na rede `edge` e só enxerga o `backend`: nenhum caminho leva dele
+ao `postgres`, ao `redis` ou ao `ollama`. O dev server do Vite faz proxy de `/api` e `/ws`,
+de modo que o navegador trafega sempre na mesma origem.
 
 ---
 
@@ -356,6 +374,65 @@ continua observável; muda apenas `total_tokens = 0`.
 Detalhamento: [`REASONING-FORMAT.md`](REASONING-FORMAT.md),
 [`FLOWCHART-SCHEMA.md`](FLOWCHART-SCHEMA.md) e [`API-REASONING.md`](API-REASONING.md).
 
+### 4.9 Mundo 2D (Fase 4)
+
+| Módulo | Responsabilidade |
+|--------|------------------|
+| `services/office_map.py` | Planta do escritório (40×24 tiles) e lotação determinística dos agentes |
+| `services/game_service.py` | Projeção de leitura: quadro de pessoal + lotação + recursos + relógio + economia |
+| `routes/game.py` | `GET /game/map`, `GET /game/state`, `GET/POST` de posição e movimento |
+| `routes/ws.py` | `WS /ws/game-state`: snapshot inicial, eventos cognitivos e *diffs* a cada tick |
+
+```mermaid
+flowchart LR
+    subgraph back["backend"]
+        OM["office_map<br/>(lotação em memória)"]
+        GS[game_service]
+        B[ReasoningBroker]
+        WS["WS /ws/game-state"]
+        OM --> GS
+        DB[("agents · reasoning_sessions")] --> GS
+        GS --> WS
+        B --> WS
+    end
+
+    subgraph front["frontend"]
+        ST[gameStore]
+        RD["OfficeRenderer<br/>(PixiJS)"]
+        UI["TopBar · SidePanel · ChatLog"]
+        ST --> RD
+        ST --> UI
+    end
+
+    WS -->|"game.snapshot · game.tick · agent.* · step"| ST
+```
+
+**ADR-008 — PixiJS como motor 2D.** O escritório é um mapa top-down pequeno, sem física e
+com poucas dezenas de sprites. Babylon.js (3D completo) e Phaser 3 (loop de jogo, cenas e
+input próprios) resolveriam muito mais do que o problema exige e duplicariam o
+gerenciamento de estado que já vive no React/Zustand. PixiJS é um renderizador WebGL fino:
+o React continua dono do estado e o canvas só desenha o snapshot que recebe.
+
+**ADR-009 — sprites procedurais.** Avatares, móveis e ícones são desenhados com `Graphics`
+a partir de uma paleta de 16 bits e cacheados como textura (`engine/textures.ts`). Nenhum
+binário de arte é versionado e nenhum download acontece em tempo de execução. Trocar de
+tema é trocar a paleta (`THEMES.dark` / `THEMES.light`): o renderizador repinta piso,
+cômodos, rótulos e balões sem recriar sprite algum.
+
+**ADR-010 — posições em memória, não no banco.** Nenhum modelo ORM tem coordenadas. A
+lotação vive num registro por processo (`OfficeMap`), com a mesma disciplina do broker:
+*lock* + instância via `lru_cache`. A atribuição é determinística — Chief na mesa do cargo,
+subagente na estação livre de menor índice ordenado por `created_at` — então reiniciar o
+backend recoloca todo mundo no lugar canônico. A Fase 4 não precisou de migração.
+
+**ADR-011 — `/ws/game-state` reaproveita o barramento da Fase 3.** Eventos cognitivos
+(`session.started`, `step`, `session.finished`) atravessam o canal sem tradução. O que não
+emite evento próprio — contratação, demissão, mudança de regime da Natureza — é detectado
+por *diff* entre dois snapshots consecutivos a cada `GAME_TICK_SECONDS`. Nenhum serviço das
+Fases 2 e 3 precisou ser alterado; o custo é a latência de um tick nesses casos.
+
+Detalhamento da interface: [`frontend/README.md`](../frontend/README.md).
+
 ---
 
 ## 5. Arquitetura de Dados
@@ -590,14 +667,16 @@ sequenceDiagram
 
 ## 8. Estratégia de Testes
 
-**255 testes, todos offline e determinísticos — 98% de cobertura.** Nenhum toca rede, GPU ou
-PostgreSQL real.
+**286 testes no backend e 69 no frontend — todos offline e determinísticos.** Nenhum toca
+rede, GPU, WebGL ou PostgreSQL real.
 
 | Arquivo | Cobre |
 |---------|-------|
 | `test_nature_manager.py` | Orçamento, teto por regime, bloqueio, fila FIFO e alertas |
 | `test_api_fase2.py` | Conselho, RA, Banco de Talentos, Natureza e fluxo ponta a ponta |
 | `test_api_fase3.py` | Execução observável, fluxograma, status ao vivo, métricas, retenção, WebSocket e overhead |
+| `test_api_fase4.py` | Planta, estado do mundo, movimentação e o canal `/ws/game-state` |
+| `test_office_map.py` | Geometria da planta, lotação determinística, bench e relógio corporativo |
 | `test_ra_service.py` | Triagem, esclarecimento, contratação, demissão, carga e concorrência |
 | `test_talent_bank.py` | Slug, palavras-chave, busca, versionamento, uso e avaliação |
 | `test_council_service.py` | Raciocínio de cada persona, veto do CTO e desempate do CEO |
@@ -612,10 +691,23 @@ PostgreSQL real.
 | `test_settings.py` | Validação de configuração e propriedades derivadas |
 | `test_ollama_client.py` | Parsing, streaming de `generate` e tolerância a falhas |
 
+No frontend (`frontend/src/**/*.test.ts[x]`, jsdom):
+
+| Arquivo | Cobre |
+|---------|-------|
+| `store/gameStore.test.ts` | Reducer de todos os eventos do canal, pausa com represamento e notificações |
+| `store/uiStore.test.ts` | Seleção, abas, limites de zoom, pan, enquadramento automático e tema |
+| `services/socket.test.ts` | Desserialização, backoff exponencial, watchdog de silêncio e `dispose` |
+| `services/http.test.ts` | URL, query string, serialização do corpo e `ApiError` |
+| `engine/layoutMath.test.ts` | Conversão de tiles, enquadramento, *clamp* da câmera, culling e rota em L |
+| `hooks/useKeyboardShortcuts.test.tsx` | Atalhos globais e a guarda contra digitação em campos |
+| `components/*.test.tsx` | Barra superior, painel lateral, fluxograma, log e notificações |
+
 **Dublês:** SQLite em memória (`StaticPool`) para o banco; `httpx.MockTransport` para o Ollama
 (incluindo respostas ReAct roteirizadas em NDJSON); sondas lambda para o hardware. A
 substituição é feita via `app.dependency_overrides` — que também vale para as rotas
-WebSocket.
+WebSocket. No frontend, o `WebSocket` é injetado por fábrica e o `OfficeRenderer` nunca é
+montado: a lógica testável do canvas vive em `engine/layoutMath.ts`, sem depender de WebGL.
 
 **Concorrência:** exercitada sobre o `NatureManager` (`ThreadPoolExecutor`), que é o estado
 mutável compartilhado. A escrita no banco permanece sequencial nos testes porque a `Session`
@@ -629,7 +721,8 @@ do SQLAlchemy não é thread-safe.
 |------|--------------|
 | **2 — Societária** | ✅ Concluída: `council_service.py`, `ra_service.py`, `talent_bank.py`, `complexity_classifier.py` e `prompt_factory.py`. |
 | **3 — Observabilidade** | ✅ Concluída: `react_engine.py`, `reasoning_tracer.py`, `reasoning_broker.py`, `reasoning_tools.py`, `reasoning_flow.py`, `reasoning_metrics.py` e `routes/ws.py`. |
-| **4 — Motor 2D** | Frontend consome `GET /reasoning-flow`, `GET /live-status` e os canais `WS /ws/reasoning`; CORS já liberado para `localhost:3000`; Redis entra como transporte do `ReasoningBroker` quando houver mais de um worker. |
+| **4 — Motor 2D** | ✅ Concluída: `office_map.py`, `game_service.py`, `routes/game.py`, `WS /ws/game-state` e o pacote `frontend/` (PixiJS + React + Zustand). |
+| **Próximos passos** | Redis como transporte do `ReasoningBroker` (multi-worker); execução de `reasoning/run` em background; persistir a fila da Natureza. |
 
 ---
 
@@ -642,6 +735,9 @@ do SQLAlchemy não é thread-safe.
 | SQLAlchemy síncrono em rotas async | Handlers de banco rodam no threadpool | Adequado para a escala local; migrar para `asyncpg` só se houver gargalo medido |
 | `psutil` lê a RAM do host, não do cgroup do container | Em hosts com limites de cgroup diferentes a leitura pode divergir | `NATURE_RAM_LIMIT_MB` permite fixar o teto manualmente |
 | Raciocínio dos Chiefs é lexical, não inferencial | Propostas com sinônimos fora das listas podem ser mal classificadas | Deliberação determinística é um requisito de auditoria; a inferência real já existe via `POST /agents/{id}/reasoning/run` |
-| `POST /reasoning/run` é síncrono | Uma tarefa com modelo grande pode segurar a conexão HTTP por dezenas de segundos | Os passos já chegam ao vivo pelo WebSocket; a execução em background entra na Fase 4 |
+| `POST /reasoning/run` é síncrono | Uma tarefa com modelo grande pode segurar a conexão HTTP por dezenas de segundos | Os passos já chegam ao vivo pelo WebSocket; a execução em background fica para uma fase futura |
 | `ReasoningBroker` vive no processo | Com mais de um worker Uvicorn, um cliente só recebe os eventos do worker a que se conectou | Trocar o transporte por Redis pub/sub (ADR-006); a interface pública não muda |
 | Rotas síncronas chamam o Ollama via `asyncio.run` | Um event loop novo por requisição | Custo irrelevante diante da latência do LLM; mantém todo o backend síncrono e previsível |
+| Posições do escritório não persistem | Reiniciar o backend desfaz movimentos manuais | A lotação é determinística (ADR-010): todo mundo volta ao posto canônico |
+| `agent.joined`/`agent.left` dependem do *diff* de snapshot | Chegam com até um `GAME_TICK_SECONDS` de atraso | Aceitável para um sandbox; emitir evento direto exigiria tocar os serviços das Fases 2 e 3 |
+| `/ws/game-state` roda consultas SQLAlchemy síncronas no event loop | Um tick longo pode atrasar o envio de eventos | Mesmo padrão já usado em `/ws/agents/{id}/reasoning`; o snapshot é uma única passada pelo banco |

@@ -13,8 +13,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.config.logging import get_logger
-from app.routes.deps import DbSession
-from app.services import reasoning_service
+from app.config.settings import Settings
+from app.routes.deps import AppSettings, DbSession, Nature
+from app.services import game_service, reasoning_service
+from app.services.nature_manager import NatureManager
 from app.services.reasoning_broker import Subscription, get_broker
 
 logger = get_logger(__name__)
@@ -87,3 +89,62 @@ async def _pump(websocket: WebSocket, subscription: Subscription) -> None:
             await websocket.send_json({"event": "heartbeat"})
             continue
         await websocket.send_json(event)
+
+
+@router.websocket("/ws/game-state")
+async def game_state_stream(
+    websocket: WebSocket, session: DbSession, nature: Nature, settings: AppSettings
+) -> None:
+    """Canal único do mundo 2D: snapshot inicial, eventos cognitivos e diffs de estado.
+
+    Nem toda mudança emite evento próprio (contratação, demissão, pressão da
+    Natureza). A cada tick o servidor recalcula o snapshot e publica só o delta.
+    """
+    await websocket.accept()
+    broker = get_broker()
+    subscription = broker.subscribe(None)
+    previous: game_service.GameSnapshot | None = None
+    try:
+        previous = game_service.build_snapshot(session, nature, settings)
+        await websocket.send_json({"event": "game.snapshot", "data": previous.to_dict()})
+        while True:
+            try:
+                event = await asyncio.wait_for(
+                    subscription.next_event(), timeout=settings.game_tick_seconds
+                )
+            except TimeoutError:
+                previous = await _tick(websocket, session, nature, settings, previous)
+                continue
+            await websocket.send_json(event)
+    except WebSocketDisconnect:
+        logger.info("ws.game_state_disconnected")
+    finally:
+        broker.unsubscribe(subscription)
+
+
+async def _tick(
+    websocket: WebSocket,
+    session: Session,
+    nature: NatureManager,
+    settings: Settings,
+    previous: game_service.GameSnapshot | None,
+) -> game_service.GameSnapshot:
+    """Recalcula o mundo e envia apenas o que mudou desde o tick anterior."""
+    # A sessão vive enquanto o socket viver: expirar a identity map é o que faz
+    # o próximo SELECT enxergar o que outras requisições já commitaram.
+    session.expire_all()
+    current = game_service.build_snapshot(session, nature, settings)
+    events = game_service.diff(previous, current)
+    for event in events:
+        await websocket.send_json(event)
+    await websocket.send_json(
+        {
+            "event": "game.tick",
+            "data": {
+                "clock": current.clock,
+                "resources": current.resources,
+                "economy": current.economy,
+            },
+        }
+    )
+    return current

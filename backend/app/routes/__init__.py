@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.routes import (
     agents,
     council,
+    game,
     health,
     hiring,
     models,
@@ -25,6 +26,7 @@ api_router.include_router(hiring.router)
 api_router.include_router(talent.router)
 api_router.include_router(models.router)
 api_router.include_router(reasoning.router)
+api_router.include_router(game.router)
 api_router.include_router(ws.router)
 
 __all__ = ["api_router"]

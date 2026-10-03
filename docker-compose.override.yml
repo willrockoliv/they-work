@@ -14,3 +14,10 @@ services:
       - --reload
       - --reload-dir
       - /app/backend/app
+
+  frontend:
+    volumes:
+      # `node_modules` fica num volume anônimo: o host não precisa (nem deve) tê-lo.
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    command: ["npm", "run", "dev"]

@@ -16,15 +16,17 @@ de negócio corporativas.
 
 **Stack & Tamanho:**
 Monorepo pequeno. Backend Python 3.14.8 (FastAPI 0.142.2, SQLAlchemy 2.1.3 síncrono, Alembic
-1.20.0, Pydantic 2.13.5, structlog). Infra: PostgreSQL 16.11, Redis 8.2.2, Ollama 0.12.11, tudo
-via Docker Compose. Frontend 2D (React/Vue) previsto apenas para a Fase 4 — ainda **não existe**.
+1.20.0, Pydantic 2.13.5, structlog). Frontend 2D em `frontend/` (Vite 8.3.2, React 19.3.0,
+TypeScript 5.9.3, PixiJS 8.22.0, Zustand 5.0.15, Vitest 5.0.3). Infra: PostgreSQL 16.11,
+Redis 8.2.2, Ollama 0.12.11, tudo via Docker Compose.
 
 **Arquivos-chave na raiz:**
-- `pyproject.toml` — dependências, ruff, mypy, pytest (configuração única do projeto)
+- `pyproject.toml` — dependências, ruff, mypy, pytest (configuração única do backend)
 - `docker-compose.yml` — stack principal (+ `.override.yml` dev, `.gpu.yml` NVIDIA)
 - `.env.example` — modelo de configuração; copie para `.env`
 - `scripts/pull_models.sh` — baixa os 5 modelos Ollama
 - `backend/` — código da aplicação, `alembic/` e `tests/`
+- `frontend/` — interface 2D; `package.json` fixa todas as versões
 
 
 ## Instruções de Build, Execução e Validação
@@ -56,15 +58,17 @@ via Docker Compose. Frontend 2D (React/Vue) previsto apenas para a Fase 4 — ai
 
 ### Lint
 - **Python:** `ruff check .` (config em `pyproject.toml`)
-- **JS/TS:** `docker compose exec frontend npm run lint` (apenas a partir da Fase 4)
-- **Auto-fix:** `ruff check . --fix`
+- **JS/TS:** `docker compose exec frontend npm run lint`
+- **Auto-fix:** `ruff check . --fix` · `docker compose exec frontend npm run lint:fix`
 
 ### Type Checking
 - **Python:** `mypy` (modo estrito, configurado em `pyproject.toml`)
-- **TypeScript:** `docker compose exec frontend npm run type-check` (apenas a partir da Fase 4)
+- **TypeScript:** `docker compose exec frontend npm run type-check`
 
 ### Testes
 - **Backend:** `pytest` (offline; SQLite in-memory + dublês de HTTP/hardware)
+- **Frontend:** `docker compose exec frontend npm run test` (Vitest + jsdom; nenhum teste
+  abre WebGL ou rede)
 
 ### Problemas Comuns & Workarounds
 - Se o backend reiniciar em loop, confira se `POSTGRES_PASSWORD` e `DATABASE_URL` no `.env`
@@ -88,19 +92,30 @@ backend/app/
 ├── config/      # settings (pydantic-settings), logging (structlog), database (engine/sessão)
 ├── models/      # ORM SQLAlchemy + enums de domínio (models/enums.py)
 ├── schemas/     # contratos Pydantic da API
-├── services/    # regras de negócio: nature_manager, model_catalog, agent_service, audit_service, ollama_client
-└── routes/      # camada HTTP fina (health, resources, agents, models) + deps.py
+├── services/    # regras de negócio: nature_manager, model_catalog, agent_service, audit_service,
+│               # ollama_client, react_engine, reasoning_*, office_map, game_service
+└── routes/      # camada HTTP fina (health, resources, agents, models, game, ws) + deps.py
+
+frontend/src/
+├── components/  # TopBar, OfficeCanvas, SidePanel (+abas), ChatLog, Notifications, Controls
+├── engine/      # PixiJS: OfficeRenderer, AgentSprite, ChatBubble, textures, palette, layoutMath
+├── hooks/       # useGameSocket, useKeyboardShortcuts
+├── services/    # config de origem, cliente HTTP tipado, GameSocket (backoff + watchdog)
+├── store/       # gameStore (mundo) e uiStore (seleção, câmera, tema)
+└── types/       # espelho tipado de backend/app/schemas
 ```
 
 **Regra de dependência (unidirecional):** `routes/ → services/ → models/ → config/`.
 `models/` nunca importa de `services/`; `services/` nunca importa de `routes/`.
+No frontend: `components/ → store/ → services/ → types/`; o `engine/` só recebe snapshots.
 
 **Pontos de atenção ao editar:**
 - Tipos de coluna precisam funcionar em PostgreSQL **e** SQLite (testes). Use variantes de
   dialeto — ver `models/base.py` e `audit.py`.
 - `Settings` é cacheado com `@lru_cache`; em testes, defina env vars **antes** de importar `app.*`.
 - `dependency_overrides` do FastAPI só aceita callables sem parâmetros (use `lambda: factory()`).
-- Nenhum teste pode tocar rede, GPU ou banco real.
+- Nenhum teste pode tocar rede, GPU, WebGL ou banco real.
+- Seletor do Zustand nunca pode devolver literal novo (`?? []`) — use referência estável.
 
 Detalhamento completo (diagramas, ADRs, fluxos, limitações): `docs/ARCHITECTURE.md`.
 

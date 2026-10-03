@@ -24,3 +24,15 @@ htmlcov/
 .idea/
 .vscode/*
 !.vscode/settings.json
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-store/
+
+# Frontend (Fase 4)
+frontend/coverage/
+frontend/.vite/

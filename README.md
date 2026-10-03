@@ -8,7 +8,7 @@ O usuário é um **observador onisciente**: acompanha as decisões do conselho, 
 raciocínio de cada agente e vê o escritório funcionando. Nada disso escapa dos limites
 físicos do hardware — e é exatamente aí que entra **A Natureza**.
 
-> Documentação completa: [PRD](docs/PRD.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Setup e troubleshooting](docs/SETUP.md) · [Lógica dos Chiefs](docs/CHIEF-LOGIC.md) · [Banco de Talentos](docs/TALENT-BANK.md) · [Fluxo de contratação](docs/HIRING-FLOW.md)
+> Documentação completa: [PRD](docs/PRD.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Setup e troubleshooting](docs/SETUP.md) · [Lógica dos Chiefs](docs/CHIEF-LOGIC.md) · [Banco de Talentos](docs/TALENT-BANK.md) · [Fluxo de contratação](docs/HIRING-FLOW.md) · [Frontend 2D](frontend/README.md)
 
 ---
 
@@ -58,7 +58,8 @@ docker compose up -d --build
 curl -X POST http://localhost:8000/agents/chiefs/init
 ```
 
-Pronto. A documentação interativa da API fica em <http://localhost:8000/docs>.
+Pronto. O **escritório virtual** abre em <http://localhost:3000> e a documentação
+interativa da API fica em <http://localhost:8000/docs>.
 
 > Tem GPU NVIDIA? Suba com o override para acelerar a inferência:
 > `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
@@ -119,7 +120,6 @@ Pronto. A documentação interativa da API fica em <http://localhost:8000/docs>.
 Contratos detalhados: [`docs/API-REASONING.md`](docs/API-REASONING.md),
 [`docs/REASONING-FORMAT.md`](docs/REASONING-FORMAT.md) e
 [`docs/FLOWCHART-SCHEMA.md`](docs/FLOWCHART-SCHEMA.md).
-
 ```bash
 # Ver um agente pensar em voz alta
 AGENT=$(curl -s localhost:8000/agents/status | jq -r '.chiefs[0].id')
@@ -131,6 +131,20 @@ curl -s -X POST "localhost:8000/agents/$AGENT/reasoning/run" \
 > Sem o Ollama no ar (ou sem o modelo baixado), o agente cai num planejador determinístico:
 > consulta uma ferramenta de verdade e conclui a partir da observação. A simulação nunca
 > deixa de ser observável.
+
+### Fase 4 — Mundo 2D
+
+| Método | Rota | O que faz |
+|--------|------|-----------|
+| `GET` | `/game/map` | Planta do escritório: cômodos, postos de trabalho e pontos de interesse |
+| `GET` | `/game/state` | Estado completo do mundo: lotação, relógio, recursos e economia |
+| `GET` | `/agents/{id}/position` | Posição de um agente no grid |
+| `POST` | `/agents/{id}/move` | Move um agente para um tile arbitrário |
+| `POST` | `/agents/{id}/recall` | Devolve o agente ao posto fixo |
+| `WS` | `/ws/game-state` | Canal único do mundo: snapshot, eventos cognitivos e diffs de estado |
+
+A interface consome tudo isso em <http://localhost:3000>:
+[`frontend/README.md`](frontend/README.md).
 
 ---
 
@@ -170,6 +184,14 @@ docker compose exec backend alembic revision --autogenerate -m "descrição"
 docker compose exec backend alembic upgrade head
 ```
 
+O frontend nunca roda no host — todos os comandos passam pelo container:
+
+```bash
+docker compose exec frontend npm run lint
+docker compose exec frontend npm run type-check
+docker compose exec frontend npm run test
+```
+
 ---
 
 ## Roadmap
@@ -180,4 +202,5 @@ docker compose exec backend alembic upgrade head
   pipeline de contratação do RA, Banco de Talentos versionado e seleção dinâmica de modelos.
 - [x] **Fase 3 — Transparência:** interceptação do fluxo ReAct de cada agente, fluxograma
   cognitivo, WebSocket ao vivo, métricas de custo/ROI e política de retenção.
-- [ ] **Fase 4 — Motor 2D:** escritório top-down, avatares, raio-X cognitivo via WebSocket.
+- [x] **Fase 4 — Motor 2D:** escritório top-down em PixiJS, avatares animados com balões de
+  fala, painel de raio-X cognitivo e canal `WS /ws/game-state` em tempo real.
