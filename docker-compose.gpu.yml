@@ -11,7 +11,7 @@ services:
               count: 1
               capabilities: [gpu]
 
-  # Sem acesso ao driver, o GPUtil não enxerga a VRAM e a Natureza monitora apenas RAM.
+  # Sem acesso ao driver, o nvidia-smi não enxerga a VRAM e a Natureza monitora apenas RAM.
   backend:
     deploy:
       resources:

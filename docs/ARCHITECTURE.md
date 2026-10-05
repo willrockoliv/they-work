@@ -34,7 +34,7 @@ três serviços de apoio — PostgreSQL (estado), Redis (cache/fila) e Ollama (i
 | Banco | PostgreSQL | 16.11-alpine |
 | Cache/Fila | Redis | 8.2.2-alpine |
 | Inferência | Ollama | 0.12.11 |
-| Monitoramento | psutil / GPUtil | 7.2.2 / 1.4.0 |
+| Monitoramento | psutil / nvidia-smi | 7.2.2 / driver do host |
 | Logging | structlog | 26.1.0 |
 
 **Frontend 2D (Fase 4)**
@@ -138,7 +138,7 @@ sem criar ciclos.
 O componente mais característico do sistema. Converte escassez física em ficção corporativa.
 
 **Responsabilidades**
-1. Amostrar RAM (psutil), VRAM (GPUtil) e CPU.
+1. Amostrar RAM (psutil), VRAM (nvidia-smi) e CPU.
 2. Classificar a infraestrutura em `HEALTHY` / `WARNING` / `CRITICAL`.
 3. Emitir vereditos sobre requisições de contratação do RA.
 4. Represar requisições numa fila quando não há orçamento.

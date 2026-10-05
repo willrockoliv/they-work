@@ -1,12 +1,14 @@
 """A Natureza — traduz os limites físicos do hardware em regras corporativas.
 
-Monitora RAM (psutil) e VRAM (GPUtil) e decide se o RA pode instanciar novos
+Monitora RAM (psutil) e VRAM (nvidia-smi) e decide se o RA pode instanciar novos
 subagentes, forçando downgrade de modelo ou bloqueando contratações quando a
 "infraestrutura da empresa" atinge a capacidade máxima.
 """
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -26,6 +28,7 @@ from app.services.model_catalog import ModelSpec
 logger = get_logger(__name__)
 
 _BYTES_IN_MB = 1024 * 1024
+_VRAM_PROBE_TIMEOUT_S = 2.0
 
 #: Probe retorna (total_mb, used_mb).
 MemoryProbe = Callable[[], tuple[int, int]]
@@ -123,23 +126,39 @@ def _psutil_ram_probe() -> tuple[int, int]:
     return memory.total // _BYTES_IN_MB, (memory.total - memory.available) // _BYTES_IN_MB
 
 
-def _gputil_vram_probe() -> tuple[int, int]:
-    """Lê a VRAM via GPUtil. Retorna (0, 0) quando não há GPU NVIDIA acessível."""
-    try:
-        import GPUtil  # importado sob demanda: ausente em runners sem GPU
-    except ImportError:  # pragma: no cover - depende do ambiente
+def _nvidia_smi_vram_probe() -> tuple[int, int]:
+    """Lê a VRAM da primeira GPU via nvidia-smi. Retorna (0, 0) sem GPU acessível."""
+    binary = shutil.which("nvidia-smi")
+    if binary is None:
         return 0, 0
 
     try:
-        gpus = GPUtil.getGPUs()
-    except Exception:  # pragma: no cover - nvidia-smi ausente no container
+        completed = subprocess.run(
+            [
+                binary,
+                "--query-gpu=memory.total,memory.used",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_VRAM_PROBE_TIMEOUT_S,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover - depende do host
         logger.debug("nature.vram_probe_failed")
         return 0, 0
 
-    if not gpus:
+    first_line = completed.stdout.strip().splitlines()
+    if not first_line:
         return 0, 0
-    gpu = gpus[0]
-    return int(gpu.memoryTotal), int(gpu.memoryUsed)
+
+    try:
+        total, used = (int(float(field)) for field in first_line[0].split(","))
+    except ValueError:  # pragma: no cover - formato inesperado do driver
+        logger.debug("nature.vram_probe_unparseable", payload=first_line[0])
+        return 0, 0
+
+    return total, used
 
 
 def _cpu_probe() -> float:
@@ -152,7 +171,7 @@ class NatureManager:
 
     settings: Settings = field(default_factory=get_settings)
     ram_probe: MemoryProbe = _psutil_ram_probe
-    vram_probe: MemoryProbe = _gputil_vram_probe
+    vram_probe: MemoryProbe = _nvidia_smi_vram_probe
     cpu_probe: Callable[[], float] = _cpu_probe
 
     def __post_init__(self) -> None:

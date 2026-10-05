@@ -85,7 +85,7 @@ curl -X POST http://localhost:8000/council/deliberate \
 AGENT=$(curl -s http://localhost:8000/agents/status | jq -r '.chiefs[0].id')
 curl -X POST "http://localhost:8000/agents/$AGENT/reasoning/run" \
   -H 'content-type: application/json' \
-  -d '{"task":"Quanta RAM sobra para novos subagentes?"}'
+  -d '{"task":"Iniciem uma empresa de tecnologia voltada para escritorios de contabilidade"}'
 ```
 
 Com a interface aberta, o canal `WS /ws/game-state` empurra cada passo em tempo real.

@@ -63,8 +63,8 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
 Esse override dá acesso à GPU para o `ollama` (inferência) e para o `backend` (para que o
-GPUtil consiga ler a VRAM). Sem ele, `/resources/status` retorna `gpu_detected: false` e a
-Natureza decide apenas com base na RAM.
+`nvidia-smi` consiga ler a VRAM). Sem ele, `/resources/status` retorna `gpu_detected: false`
+e a Natureza decide apenas com base na RAM.
 
 ---
 
