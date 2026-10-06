@@ -4,7 +4,20 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 
 ## .github/memories/exec-plans/backlog/ - planos para futuras implementações
 
-*Nenhum plano no backlog.*
+### [2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa.md](backlog/2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa.md)
+**Objetivo:** Implementar UI para submeter pedidos aos chiefs e fluxo onde chiefs deliberam coletivamente, conversam entre si e delegam tarefas para outros agentes  
+**Status:** 📋 Planejado  
+**Conceito:** Grafo dinâmico de comunicações (DAG) — não é linear, é rede corporativa com feedback loops  
+**Estimativa:** 52–64 horas (backend + frontend + testes)  
+
+**📚 Documentação Complementar em `docs/fase-5/` (LEIA NESTA ORDEM):**
+1. [docs/fase-5/README-FASE-5.md](../../docs/fase-5/README-FASE-5.md) — **COMECE AQUI** — Resumo executivo + TL;DR
+2. [docs/fase-5/ARQUITETURA-FASE-5.md](../../docs/fase-5/ARQUITETURA-FASE-5.md) — Diagramas Mermaid da arquitetura (frontend → backend → db)
+3. [docs/fase-5/GRAFO-EXEMPLO.md](../../docs/fase-5/GRAFO-EXEMPLO.md) — Exemplo prático passo a passo: "Fundar startup" (14 estados)
+4. [docs/fase-5/FLUXO-DECISAO-CHIEF.md](../../docs/fase-5/FLUXO-DECISAO-CHIEF.md) — Diagramas do ciclo de análise de reports (REJECT/MODIFY/CONSULT/APPROVE)
+5. [docs/fase-5/FERRAMENTAS-CHIEF-ANALYSIS.md](../../docs/fase-5/FERRAMENTAS-CHIEF-ANALYSIS.md) — 7 ferramentas novas para análise
+
+**Próximas ações:** Promover para `active/` quando pronto para implementar
 
 
 ## .github/memories/exec-plans/active/ - planos em andamento
