@@ -3,6 +3,16 @@
 import type { ReasoningStatus, ReasoningStepRead } from './api';
 import type { GameAgent, GameClock, GameEconomy, GameState, Position } from './game';
 import type { ResourceStatusResponse } from './api';
+import type { GraphEdge, GraphTask, InitialRequestStatus } from './network';
+
+/** Projeção enxuta de um pedido, empurrada quando ele muda de estado. */
+export interface RequestEventData {
+  id: string;
+  topic: string;
+  status: InitialRequestStatus;
+  outcome: string | null;
+  narrative: string | null;
+}
 
 export interface SessionEventData {
   id: string;
@@ -39,6 +49,9 @@ export type GameEvent =
   | { event: 'session.started'; session_id: string; data: SessionEventData }
   | { event: 'session.finished'; session_id: string; data: SessionEventData }
   | { event: 'step'; session_id: string; data: StepEventData }
+  | { event: 'network.edge'; data: GraphEdge }
+  | { event: 'network.task'; data: GraphTask }
+  | { event: 'network.request'; data: RequestEventData }
   | { event: 'heartbeat' };
 
 export type GameEventName = GameEvent['event'];

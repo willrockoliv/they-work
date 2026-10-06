@@ -69,6 +69,16 @@ class OllamaCompletion:
         }
 
 
+def _describe(exc: BaseException) -> str:
+    """Mensagem de erro sempre útil.
+
+    `httpx.ReadTimeout` e vários erros de rede têm `str()` vazio, o que produz um log
+    `error=` inútil justamente no caso mais comum: o modelo estourando o tempo limite.
+    """
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
 class OllamaClient:
     """Wrapper fino sobre a API REST do Ollama."""
 
@@ -94,7 +104,7 @@ class OllamaClient:
                 response = await client.get("/api/version", timeout=5.0)
                 response.raise_for_status()
         except (httpx.HTTPError, OSError) as exc:
-            logger.warning("ollama.health_check_failed", error=str(exc))
+            logger.warning("ollama.health_check_failed", error=_describe(exc))
             return False
         return True
 
@@ -106,7 +116,7 @@ class OllamaClient:
                 response.raise_for_status()
                 payload: dict[str, Any] = response.json()
         except (httpx.HTTPError, OSError, ValueError) as exc:
-            logger.warning("ollama.version_failed", error=str(exc))
+            logger.warning("ollama.version_failed", error=_describe(exc))
             return None
         version = payload.get("version")
         return str(version) if version is not None else None
@@ -119,7 +129,7 @@ class OllamaClient:
                 response.raise_for_status()
                 payload: dict[str, Any] = response.json()
         except (httpx.HTTPError, OSError, ValueError) as exc:
-            raise OllamaUnavailableError(str(exc)) from exc
+            raise OllamaUnavailableError(_describe(exc)) from exc
 
         models: list[InstalledModel] = []
         for item in payload.get("models", []):
@@ -175,8 +185,8 @@ class OllamaClient:
                     if event.get("done"):
                         final = event
         except (httpx.HTTPError, OSError, ValueError) as exc:
-            logger.warning("ollama.generate_failed", model=model, error=str(exc))
-            raise OllamaUnavailableError(str(exc)) from exc
+            logger.warning("ollama.generate_failed", model=model, error=_describe(exc))
+            raise OllamaUnavailableError(_describe(exc)) from exc
 
         return OllamaCompletion(
             model=str(final.get("model", model)),

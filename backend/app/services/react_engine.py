@@ -132,8 +132,13 @@ def run_task(
     nature: NatureManager | None = None,
     ollama: OllamaClient | None = None,
     settings: Settings | None = None,
+    task_id: uuid.UUID | None = None,
 ) -> ReasoningSession:
-    """Executa a tarefa capturando todo o ciclo ReAct em `reasoning_sessions`."""
+    """Executa a tarefa capturando todo o ciclo ReAct em `reasoning_sessions`.
+
+    `task_id` liga o ciclo a uma `AgentTask` da rede corporativa (Fase 5), o que
+    habilita as ferramentas de revisão de report do Chief supervisor.
+    """
     config = settings or get_settings()
     complexity = request.complexity or complexity_classifier.classify(request.task).complexity
     model_name = _model_for(agent, complexity)
@@ -154,7 +159,7 @@ def run_task(
         agent.status = AgentStatus.WORKING
         db.flush()
 
-    ctx = ToolContext(db=db, nature=nature)
+    ctx = ToolContext(db=db, nature=nature, task_id=task_id)
     system_prompt = _system_prompt(agent)
     transcript: list[str] = []
 

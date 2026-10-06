@@ -4,20 +4,7 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 
 ## .github/memories/exec-plans/backlog/ - planos para futuras implementações
 
-### [2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa.md](backlog/2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa.md)
-**Objetivo:** Implementar UI para submeter pedidos aos chiefs e fluxo onde chiefs deliberam coletivamente, conversam entre si e delegam tarefas para outros agentes  
-**Status:** 📋 Planejado  
-**Conceito:** Grafo dinâmico de comunicações (DAG) — não é linear, é rede corporativa com feedback loops  
-**Estimativa:** 52–64 horas (backend + frontend + testes)  
-
-**📚 Documentação Complementar em `docs/fase-5/` (LEIA NESTA ORDEM):**
-1. [docs/fase-5/README-FASE-5.md](../../docs/fase-5/README-FASE-5.md) — **COMECE AQUI** — Resumo executivo + TL;DR
-2. [docs/fase-5/ARQUITETURA-FASE-5.md](../../docs/fase-5/ARQUITETURA-FASE-5.md) — Diagramas Mermaid da arquitetura (frontend → backend → db)
-3. [docs/fase-5/GRAFO-EXEMPLO.md](../../docs/fase-5/GRAFO-EXEMPLO.md) — Exemplo prático passo a passo: "Fundar startup" (14 estados)
-4. [docs/fase-5/FLUXO-DECISAO-CHIEF.md](../../docs/fase-5/FLUXO-DECISAO-CHIEF.md) — Diagramas do ciclo de análise de reports (REJECT/MODIFY/CONSULT/APPROVE)
-5. [docs/fase-5/FERRAMENTAS-CHIEF-ANALYSIS.md](../../docs/fase-5/FERRAMENTAS-CHIEF-ANALYSIS.md) — 7 ferramentas novas para análise
-
-**Próximas ações:** Promover para `active/` quando pronto para implementar
+*Nenhum plano no backlog.*
 
 
 ## .github/memories/exec-plans/active/ - planos em andamento
@@ -51,6 +38,13 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 **Entregas:** planta de 40×24 tiles com lotação determinística em memória (ADR-010) · `game_service` como projeção de leitura + `diff()` de snapshots · 5 endpoints REST novos · canal único `WS /ws/game-state` reaproveitando o barramento da Fase 3 (ADR-011) · frontend Vite 8 + React 19 + PixiJS 8 + Zustand 5 com sprites procedurais (ADR-008/009) · avatares animados, balões FIFO, painel de raio-X com 3 abas, log de comunicações filtrável, notificações e atalhos de teclado · container próprio isolado na rede `edge` · 286 testes no backend + 69 no frontend  
 **Progresso:** [2026-10-03-fase-4-motor-2d-interface-progress.md](progress/2026-10-03-fase-4-motor-2d-interface-progress.md)
 
+### [2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa.md](completed/2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa.md)
+**Objetivo:** Permitir que o observador submeta pedidos ao conselho e implementar o grafo dirigido (DAG) de comunicações onde os Chiefs deliberam, pedem agentes ao RA, delegam ao próprio time, recebem reports e decidem o próximo passo  
+**Status:** ✅ Concluído em 2026-10-05  
+**Entregas:** ADRs 012–015 (reuso de `reports_to_id` como vínculo de supervisão, veredito determinístico como piso, grafo em SVG sem D3/Cytoscape, reuso do barramento da Fase 3) · `InitialRequest` + `AgentTask` + `CommunicationEdge` com 10 tipos de aresta · `report_analysis` determinístico alimentando as 7 ferramentas de revisão do Chief · `agent_decision_engine` com APPROVE/REJECT/MODIFY/CONSULT_PEERS/ESCALATE, reconvocação, subtarefa e desempate do CEO · invariante de hierarquia inviolável (o RA cria agentes mas nunca supervisiona) · `network_orchestrator` com turno automático de 3 frentes · 13 endpoints REST + 3 eventos novos no `WS /ws/game-state` · migração `0004_fase_5_rede_corporativa` · aba "Rede corporativa" com grafo SVG de layout determinístico · 340 testes no backend + 84 no frontend  
+**Documentação:** [docs/COMMUNICATION-GRAPH.md](../../docs/COMMUNICATION-GRAPH.md)  
+**Progresso:** [2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa-progress.md](progress/2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa-progress.md)
+
 
 ## .github/memories/exec-plans/archived/ - planos arquivados
 
@@ -82,4 +76,10 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 **Status:** ✅ Concluído  
 **Início:** 2026-10-03 · **Conclusão:** 2026-10-03  
 **Contém:** ADRs 008–011 (PixiJS vs. Babylon/Phaser/Canvas, sprites procedurais, posições em memória, reuso do barramento), armadilhas do ecossistema Node (peer deps do typescript-eslint, rolldown no Vite 8, `vi.mock` içado), seletor instável no Zustand que estoura o `useSyncExternalStore`, a regra `set-state-in-effect` do ESLint 10, colisão de `name`/`label` com `Container` do Pixi, ponte de enquadramento entre renderizador e store, relatório de validação E2E no navegador e 8 débitos técnicos mapeados
+
+### [2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa-progress.md](progress/2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa-progress.md)
+**Plano:** Fase 5 - Rede Corporativa e Grafo de Comunicações  
+**Status:** ✅ Concluído  
+**Início:** 2026-10-05 · **Conclusão:** 2026-10-05  
+**Contém:** ADRs 012–015, e 7 armadilhas com a correspondente correção — o enunciado da tarefa envenenando o parser de veredito (o planejador determinístico ecoa o enunciado na conclusão), marcador de risco casando no meio de palavra (`senha` dentro de `desenhar`), cobertura de objetivo quebrando com flexão verbal, o CEO virando supervisor ao desempatar, o container do frontend não espelhando o host (lint/type-check passando contra código antigo), `react-hooks/set-state-in-effect` e o prefixo vazio da API — além de 8 débitos técnicos mapeados
 

@@ -108,7 +108,9 @@ backend/app/
 ├── config/          # Infraestrutura transversal (settings, logging, engine/sessão)
 ├── models/          # Camada de domínio/persistência (SQLAlchemy ORM + enums)
 ├── schemas/         # Contratos da API (Pydantic) — fronteira de entrada/saída
-├── services/        # Regras de negócio (Natureza, catálogo, agentes, auditoria, Ollama)
+├── services/        # Regras de negócio (Natureza, catálogo, agentes, auditoria, Ollama,
+│                   # rede corporativa: communication_service, agent_decision_engine,
+│                   # report_analysis, network_orchestrator)
 └── routes/          # Camada HTTP fina: traduz requisição → serviço → schema
 ```
 
@@ -722,7 +724,8 @@ do SQLAlchemy não é thread-safe.
 | **2 — Societária** | ✅ Concluída: `council_service.py`, `ra_service.py`, `talent_bank.py`, `complexity_classifier.py` e `prompt_factory.py`. |
 | **3 — Observabilidade** | ✅ Concluída: `react_engine.py`, `reasoning_tracer.py`, `reasoning_broker.py`, `reasoning_tools.py`, `reasoning_flow.py`, `reasoning_metrics.py` e `routes/ws.py`. |
 | **4 — Motor 2D** | ✅ Concluída: `office_map.py`, `game_service.py`, `routes/game.py`, `WS /ws/game-state` e o pacote `frontend/` (PixiJS + React + Zustand). |
-| **Próximos passos** | Redis como transporte do `ReasoningBroker` (multi-worker); execução de `reasoning/run` em background; persistir a fila da Natureza. |
+| **5 — Rede Corporativa** | ✅ Concluída: `communication_service.py`, `agent_decision_engine.py`, `report_analysis.py`, `network_orchestrator.py`, `routes/network.py`, migração `0004` e a aba "Rede corporativa" no frontend. Detalhes em [COMMUNICATION-GRAPH.md](COMMUNICATION-GRAPH.md). |
+| **Próximos passos** | Redis como transporte do `ReasoningBroker` (multi-worker); execução de `reasoning/run` e `run-cycle` em background; persistir a fila da Natureza; resposta efetiva dos pares no `CONSULT_PEERS`. |
 
 ---
 
@@ -741,3 +744,7 @@ do SQLAlchemy não é thread-safe.
 | Posições do escritório não persistem | Reiniciar o backend desfaz movimentos manuais | A lotação é determinística (ADR-010): todo mundo volta ao posto canônico |
 | `agent.joined`/`agent.left` dependem do *diff* de snapshot | Chegam com até um `GAME_TICK_SECONDS` de atraso | Aceitável para um sandbox; emitir evento direto exigiria tocar os serviços das Fases 2 e 3 |
 | `/ws/game-state` roda consultas SQLAlchemy síncronas no event loop | Um tick longo pode atrasar o envio de eventos | Mesmo padrão já usado em `/ws/agents/{id}/reasoning`; o snapshot é uma única passada pelo banco |
+| `POST /council/requests/{id}/run-cycle` é síncrono | Um turno com inferência real encadeia 6 sessões ReAct e pode levar minutos, segurando a conexão HTTP | As mutações do grafo já chegam ao vivo pelos eventos `network.*`; a execução em background fica para uma fase futura |
+| `CONSULT_PEERS` não coleta a resposta dos pares | As arestas `CONSULTATION` são criadas, mas os Chiefs consultados não raciocinam sobre elas | A tarefa segue em `AWAITING_REVIEW` até `POST /ceo/final-decision/{task_id}` |
+| Cobertura de objetivo compara radicais de 4 letras | "custo"/"customizar" colidem; flexões distantes escapam | Suficiente e determinístico para o domínio; um stemmer RSLP custaria uma dependência nova |
+| Subagentes não são demitidos ao fim do pedido | A rede acumula agentes ociosos consumindo o teto da Natureza | Demitir manualmente via `POST /agents/subagents/{id}/dismiss` |

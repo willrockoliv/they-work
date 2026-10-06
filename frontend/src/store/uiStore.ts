@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export type PanelTab = 'info' | 'flow' | 'history';
+export type StageView = 'office' | 'network';
 export type Theme = 'dark' | 'light';
 
 export interface Camera {
@@ -16,13 +17,20 @@ export interface UiStoreState {
   selectedAgentId: string | null;
   panelTab: PanelTab;
   panelExpanded: boolean;
+  /** Painel recolhido para a direita, deixando só a aba de reabrir. */
+  panelCollapsed: boolean;
   chatVisible: boolean;
   chatFilterAgentId: string | null;
   theme: Theme;
   camera: Camera;
+  stageView: StageView;
+  selectedRequestId: string | null;
 
   selectAgent: (agentId: string | null) => void;
   setPanelTab: (tab: PanelTab) => void;
+  setStageView: (view: StageView) => void;
+  selectRequest: (requestId: string | null) => void;
+  togglePanelCollapsed: () => void;
   togglePanelExpanded: () => void;
   closePanel: () => void;
   toggleChat: () => void;
@@ -47,18 +55,29 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
   selectedAgentId: null,
   panelTab: 'info',
   panelExpanded: false,
+  panelCollapsed: false,
   chatVisible: true,
   chatFilterAgentId: null,
   theme: 'dark',
   camera: DEFAULT_CAMERA,
+  stageView: 'office',
+  selectedRequestId: null,
 
   selectAgent: (agentId) =>
     set((state) => ({
       selectedAgentId: agentId,
       panelExpanded: agentId === null ? false : state.panelExpanded,
+      // Escolher um agente é pedir para ver o raio-X dele: reabre o painel.
+      panelCollapsed: agentId === null ? state.panelCollapsed : false,
     })),
 
+  togglePanelCollapsed: () => set((state) => ({ panelCollapsed: !state.panelCollapsed })),
+
   setPanelTab: (panelTab) => set({ panelTab }),
+
+  setStageView: (stageView) => set({ stageView }),
+
+  selectRequest: (selectedRequestId) => set({ selectedRequestId }),
 
   togglePanelExpanded: () => set((state) => ({ panelExpanded: !state.panelExpanded })),
 

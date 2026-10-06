@@ -18,16 +18,45 @@ export function SidePanel(): React.JSX.Element {
   const selectedAgentId = useUiStore((state) => state.selectedAgentId);
   const panelTab = useUiStore((state) => state.panelTab);
   const panelExpanded = useUiStore((state) => state.panelExpanded);
+  const panelCollapsed = useUiStore((state) => state.panelCollapsed);
   const setPanelTab = useUiStore((state) => state.setPanelTab);
   const togglePanelExpanded = useUiStore((state) => state.togglePanelExpanded);
+  const togglePanelCollapsed = useUiStore((state) => state.togglePanelCollapsed);
   const closePanel = useUiStore((state) => state.closePanel);
   const agent = useGameStore((state) => (selectedAgentId ? state.agents[selectedAgentId] : null));
 
   const [historySessionId, setHistorySessionId] = useState<string | undefined>(undefined);
 
+  if (panelCollapsed) {
+    return (
+      <aside className="side-panel collapsed" aria-label="Raio-X cognitivo recolhido">
+        <button
+          type="button"
+          onClick={togglePanelCollapsed}
+          aria-expanded={false}
+          aria-label="Reabrir o raio-X cognitivo"
+          title="Reabrir o raio-X cognitivo"
+        >
+          ‹
+        </button>
+      </aside>
+    );
+  }
+
   if (!agent) {
     return (
       <aside className="side-panel" aria-label="Raio-X cognitivo">
+        <div className="panel-toolbar">
+          <button
+            type="button"
+            onClick={togglePanelCollapsed}
+            aria-expanded
+            aria-label="Recolher o raio-X cognitivo"
+            title="Recolher o raio-X cognitivo"
+          >
+            ›
+          </button>
+        </div>
         <p className="empty">
           Clique num agente do escritório para abrir o raio-X do raciocínio dele.
         </p>
@@ -53,6 +82,15 @@ export function SidePanel(): React.JSX.Element {
               aria-label={panelExpanded ? 'Recolher painel' : 'Expandir painel'}
             >
               {panelExpanded ? '⤡' : '⤢'}
+            </button>
+            <button
+              type="button"
+              onClick={togglePanelCollapsed}
+              aria-expanded
+              aria-label="Recolher o raio-X cognitivo"
+              title="Recolher o raio-X cognitivo"
+            >
+              ›
             </button>
             <button type="button" onClick={closePanel} aria-label="Fechar painel (ESC)">
               ✕

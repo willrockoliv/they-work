@@ -10,6 +10,7 @@ from app.routes import (
     hiring,
     models,
     nature,
+    network,
     reasoning,
     resources,
     talent,
@@ -27,6 +28,7 @@ api_router.include_router(talent.router)
 api_router.include_router(models.router)
 api_router.include_router(reasoning.router)
 api_router.include_router(game.router)
+api_router.include_router(network.router)
 api_router.include_router(ws.router)
 
 __all__ = ["api_router"]

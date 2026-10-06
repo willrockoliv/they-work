@@ -99,6 +99,62 @@ class CouncilOutcome(StrEnum):
     REJECTED = "REJECTED"
 
 
+class InitialRequestStatus(StrEnum):
+    """Ciclo de vida de um pedido submetido pelo observador ao conselho."""
+
+    PROPOSED = "PROPOSED"
+    DELIBERATING = "DELIBERATING"
+    IN_EXECUTION = "IN_EXECUTION"
+    AWAITING_FEEDBACK = "AWAITING_FEEDBACK"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class CommunicationType(StrEnum):
+    """Natureza de uma aresta do grafo de comunicações corporativas."""
+
+    REQUEST = "REQUEST"
+    OPINION = "OPINION"
+    COORDINATION = "COORDINATION"
+    AGENT_REQUEST = "AGENT_REQUEST"
+    AGENT_CREATED = "AGENT_CREATED"
+    DELEGATION = "DELEGATION"
+    REPORT = "REPORT"
+    CONSULTATION = "CONSULTATION"
+    ESCALATION = "ESCALATION"
+    DECISION = "DECISION"
+
+
+class CommunicationStatus(StrEnum):
+    """Estado de entrega de uma aresta do grafo."""
+
+    PENDING = "PENDING"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    PROCESSED = "PROCESSED"
+
+
+class TaskStatus(StrEnum):
+    """Ciclo de vida de uma tarefa delegada por um Chief ao seu subordinado."""
+
+    PENDING = "PENDING"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    IN_PROGRESS = "IN_PROGRESS"
+    AWAITING_REVIEW = "AWAITING_REVIEW"
+    COMPLETED = "COMPLETED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class ChiefDecision(StrEnum):
+    """Veredito do Chief supervisor sobre o report de um subordinado."""
+
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    MODIFY = "MODIFY"
+    CONSULT_PEERS = "CONSULT_PEERS"
+    ESCALATE = "ESCALATE"
+
+
 class AuditEventType(StrEnum):
     """Categorias de evento registradas na trilha de auditoria."""
 
@@ -120,6 +176,14 @@ class AuditEventType(StrEnum):
     REASONING_COMPLETED = "REASONING_COMPLETED"
     REASONING_FAILED = "REASONING_FAILED"
     REASONING_PURGED = "REASONING_PURGED"
+    REQUEST_SUBMITTED = "REQUEST_SUBMITTED"
+    REQUEST_RESOLVED = "REQUEST_RESOLVED"
+    AGENT_REQUESTED = "AGENT_REQUESTED"
+    TASK_DELEGATED = "TASK_DELEGATED"
+    TASK_REPORTED = "TASK_REPORTED"
+    TASK_REVIEWED = "TASK_REVIEWED"
+    CHIEF_CONSULTATION = "CHIEF_CONSULTATION"
+    CEO_TIEBREAK = "CEO_TIEBREAK"
 
 
 class MemoryType(StrEnum):
@@ -156,4 +220,12 @@ CHIEF_ROLES: tuple[AgentRole, ...] = (
     AgentRole.CMO,
     AgentRole.CFO,
     AgentRole.RA,
+)
+
+#: Chiefs que supervisionam subagentes (o RA cria, mas nunca supervisiona).
+SUPERVISING_ROLES: tuple[AgentRole, ...] = (
+    AgentRole.CEO,
+    AgentRole.CTO,
+    AgentRole.CMO,
+    AgentRole.CFO,
 )

@@ -8,7 +8,7 @@ O usuário é um **observador onisciente**: acompanha as decisões do conselho, 
 raciocínio de cada agente e vê o escritório funcionando. Nada disso escapa dos limites
 físicos do hardware — e é exatamente aí que entra **A Natureza**.
 
-> Documentação completa: [PRD](docs/PRD.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Setup e troubleshooting](docs/SETUP.md) · [Lógica dos Chiefs](docs/CHIEF-LOGIC.md) · [Banco de Talentos](docs/TALENT-BANK.md) · [Fluxo de contratação](docs/HIRING-FLOW.md) · [Frontend 2D](frontend/README.md)
+> Documentação completa: [PRD](docs/PRD.md) · [Arquitetura](docs/ARCHITECTURE.md) · [Setup e troubleshooting](docs/SETUP.md) · [Lógica dos Chiefs](docs/CHIEF-LOGIC.md) · [Banco de Talentos](docs/TALENT-BANK.md) · [Fluxo de contratação](docs/HIRING-FLOW.md) · [Grafo de comunicações](docs/COMMUNICATION-GRAPH.md) · [Frontend 2D](frontend/README.md)
 
 ---
 
@@ -172,6 +172,51 @@ curl -s -X POST "localhost:8000/agents/$AGENT/reasoning/run" \
 A interface consome tudo isso em <http://localhost:3000>:
 [`frontend/README.md`](frontend/README.md).
 
+### Fase 5 — Rede corporativa
+
+Você submete um pedido; o CEO delibera com as diretorias; cada Chief pede ao RA os agentes
+que lhe faltam, delega ao próprio time, recebe o report e decide o próximo passo. O
+resultado é um **grafo** de conversas que cresce ao vivo, não um pipeline linear.
+
+| Método | Rota | O que faz |
+|--------|------|-----------|
+| `POST` | `/company/bootstrap` | **Funda a empresa**: cria os 5 Chiefs e as personas do conselho |
+| `GET` | `/company/status` | Diz se a empresa já foi fundada |
+| `POST` | `/council/request-action` | Submete um pedido ao conselho (já delibera por padrão) |
+| `GET` | `/council/requests` | Lista os pedidos |
+| `GET` | `/council/requests/{id}` | Pedido + grafo de comunicações |
+| `GET` | `/council/requests/{id}/graph` | Só o DAG (nós, arestas e tarefas) |
+| `POST` | `/council/requests/{id}/start` | Põe os agentes para trabalhar **em segundo plano** |
+| `POST` | `/council/requests/{id}/run-cycle` | Avança um turno de forma síncrona (espera o fim) |
+| `POST` | `/ra/create-agent` | Um Chief pede ao RA um agente especializado |
+| `GET` | `/ra/created-agents` | Histórico dos agentes instanciados pelo RA |
+| `GET` | `/agents/{id}/tasks` | Fila de tarefas de um agente |
+| `POST` | `/agents/{id}/tasks/{task_id}/report` | O agente executa e reporta ao seu Chief |
+| `GET` | `/chiefs/{id}/supervised-agents` | Time sob supervisão direta do Chief |
+| `GET` | `/chiefs/{id}/pending-reviews` | Reports aguardando veredito |
+| `POST` | `/chiefs/{id}/delegate` | Delega uma tarefa ao próprio time |
+| `POST` | `/chiefs/{id}/tasks/{task_id}/review-and-decide` | Revisa o report e decide |
+| `POST` | `/ceo/final-decision/{task_id}` | Desempate do CEO |
+
+> **A hierarquia é inviolável:** um Chief só delega para quem reporta a ele, e o **RA cria
+> agentes mas nunca supervisiona** — quem pediu o agente é quem recebe o report dele.
+> Qualquer tentativa de furar a cadeia devolve `409`.
+
+> **Funde a empresa antes do primeiro pedido.** Sem Chiefs não há CEO para receber nem
+> diretorias para deliberar, e `request-action` devolve `409`. Pela interface, a aba
+> "Rede corporativa" mostra o botão **Fundar a empresa** enquanto isso não acontece.
+
+Submeter um pedido já põe a empresa para trabalhar: o turno roda em segundo plano e o grafo
+cresce ao vivo pelos eventos `network.*` do WebSocket. Um turno com inferência real leva
+minutos — clicar de novo não duplica o trabalho (`started: false` na resposta).
+
+O Chief revisa com 7 ferramentas determinísticas (qualidade, cobertura vs. objetivo, riscos,
+precedentes, custo/benefício, próximos passos e capacidade do agente) e decide entre
+`APPROVE`, `REJECT`, `MODIFY`, `CONSULT_PEERS` e `ESCALATE`.
+
+Detalhes, diagramas e a tabela de decisão:
+[`docs/COMMUNICATION-GRAPH.md`](docs/COMMUNICATION-GRAPH.md).
+
 ---
 
 ## Os cinco modelos
@@ -230,3 +275,6 @@ docker compose exec frontend npm run test
   cognitivo, WebSocket ao vivo, métricas de custo/ROI e política de retenção.
 - [x] **Fase 4 — Motor 2D:** escritório top-down em PixiJS, avatares animados com balões de
   fala, painel de raio-X cognitivo e canal `WS /ws/game-state` em tempo real.
+- [x] **Fase 5 — Rede Corporativa:** pedidos do observador ao conselho, grafo dirigido de
+  comunicações (DAG), criação de agentes sob demanda pelo RA, delegação hierárquica,
+  revisão de reports com 7 ferramentas e desempate do CEO.

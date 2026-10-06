@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import operator
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,7 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.memory import CorporateMemory
-from app.services import audit_service, talent_bank
+from app.models.network import AgentTask
+from app.services import audit_service, report_analysis, talent_bank
 from app.services.complexity_classifier import normalize
 from app.services.nature_manager import NatureManager
 
@@ -31,6 +33,8 @@ class ToolContext:
 
     db: Session
     nature: NatureManager | None = None
+    #: Tarefa sob análise, quando o ciclo ReAct é uma revisão de report (Fase 5).
+    task_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +177,158 @@ def _calculadora(_: ToolContext, expression: str) -> ToolResult:
     return ToolResult(f"{expression} = {result:g}", {"expression": expression, "result": result})
 
 
+# --- Ferramentas de análise de report (Fase 5) -------------------------------
+
+
+def _current_task(ctx: ToolContext) -> AgentTask | None:
+    return ctx.db.get(AgentTask, ctx.task_id) if ctx.task_id is not None else None
+
+
+def _sem_tarefa(name: str) -> ToolResult:
+    return ToolResult(
+        f"A ferramenta '{name}' só funciona durante a revisão de uma tarefa delegada.",
+        {"task_id": None},
+        error="no_task_in_context",
+    )
+
+
+def _report_text(task: AgentTask, fallback: str) -> str:
+    return task.report_summary or fallback
+
+
+def _avaliar_qualidade_report(ctx: ToolContext, query: str) -> ToolResult:
+    task = _current_task(ctx)
+    if task is None:
+        return _sem_tarefa("avaliar_qualidade_report")
+    criteria = tuple(str(item) for item in task.context.get("acceptance_criteria", []))
+    quality = report_analysis.evaluate_quality(
+        _report_text(task, query), acceptance_criteria=criteria
+    )
+    notes = " ".join(quality.notes) or "Sem ressalvas estruturais."
+    return ToolResult(
+        (
+            f"Qualidade {quality.score}/100 (completude {quality.completeness}, clareza "
+            f"{quality.clarity}, estrutura {quality.structure}). {notes}"
+        ),
+        {"task_id": str(task.id), **quality.to_dict()},
+    )
+
+
+def _comparar_vs_objetivo(ctx: ToolContext, query: str) -> ToolResult:
+    task = _current_task(ctx)
+    if task is None:
+        return _sem_tarefa("comparar_vs_objetivo")
+    comparison = report_analysis.compare_vs_objective(
+        task.task_description, _report_text(task, query)
+    )
+    gaps = ", ".join(comparison.gaps[:5]) or "nenhuma"
+    return ToolResult(
+        (
+            f"Cobertura de {comparison.achievement_ratio:.0%} do objetivo. "
+            f"Lacunas: {gaps}."
+        ),
+        {"task_id": str(task.id), **comparison.to_dict()},
+    )
+
+
+def _checar_riscos(ctx: ToolContext, query: str) -> ToolResult:
+    task = _current_task(ctx)
+    text = _report_text(task, query) if task is not None else query
+    risks = report_analysis.check_risks(text)
+    payload = {
+        "task_id": str(task.id) if task else None,
+        "risks": [risk.to_dict() for risk in risks],
+        "risk_level": report_analysis.highest_severity(risks),
+    }
+    if not risks:
+        return ToolResult("Nenhum risco relevante identificado no texto analisado.", payload)
+    lines = [f"- [{risk.severity}] {risk.category}: '{risk.evidence}'" for risk in risks]
+    return ToolResult("\n".join(lines), payload)
+
+
+def _estimar_custo_beneficio(ctx: ToolContext, query: str) -> ToolResult:
+    task = _current_task(ctx)
+    if task is None:
+        return _sem_tarefa("estimar_custo_beneficio")
+    text = _report_text(task, query)
+    criteria = tuple(str(item) for item in task.context.get("acceptance_criteria", []))
+    quality = report_analysis.evaluate_quality(text, acceptance_criteria=criteria)
+    comparison = report_analysis.compare_vs_objective(task.task_description, text)
+    risks = report_analysis.check_risks(text)
+    estimate = report_analysis.estimate_cost_benefit(quality, comparison, risks)
+    options = "; ".join(
+        f"{name} (ROI {data['roi']})" for name, data in estimate["options"].items()
+    )
+    return ToolResult(
+        f"Melhor retorno: {estimate['recommended']}. Comparativo: {options}.",
+        {"task_id": str(task.id), **estimate},
+    )
+
+
+def _proximos_passos(ctx: ToolContext, query: str) -> ToolResult:
+    task = _current_task(ctx)
+    if task is None:
+        return _sem_tarefa("proximos_passos")
+    text = _report_text(task, query)
+    comparison = report_analysis.compare_vs_objective(task.task_description, text)
+    risks = report_analysis.check_risks(text)
+    steps = report_analysis.identify_next_steps(task, comparison, risks)
+    return ToolResult(
+        "\n".join(f"- {step}" for step in steps),
+        {"task_id": str(task.id), "next_steps": list(steps)},
+    )
+
+
+def _capacidade_do_agente(ctx: ToolContext, query: str) -> ToolResult:
+    task = _current_task(ctx)
+    if task is None:
+        return _sem_tarefa("capacidade_do_agente")
+    profile = report_analysis.agent_capability(ctx.db, task.assigned_to_agent_id)
+    return ToolResult(
+        (
+            f"{profile.total_tasks} tarefa(s) no histórico ({profile.completed} aprovadas, "
+            f"{profile.rejected} rejeitadas), qualidade média {profile.average_quality}/100. "
+            f"{profile.recommendation}"
+        ),
+        {"query": query, **profile.to_dict()},
+    )
+
+
+def _precedentes_corporativos(ctx: ToolContext, query: str) -> ToolResult:
+    """Decisões passadas do conselho que servem de precedente para a atual."""
+    task = _current_task(ctx)
+    subject = query or (task.title if task else "")
+    terms = [term for term in normalize(subject).split() if len(term) > 3]
+    events = audit_service.list_events(ctx.db, limit=100)
+    hits = [
+        event
+        for event in events
+        if event.decision
+        and (
+            not terms
+            or any(
+                term in normalize(f"{event.summary} {event.narrative}") for term in terms
+            )
+        )
+    ][:MAX_RESULTS]
+    payload = {
+        "query": query,
+        "precedents": [
+            {
+                "event_type": event.event_type.value,
+                "actor": event.actor,
+                "decision": event.decision,
+                "summary": event.summary,
+            }
+            for event in hits
+        ],
+    }
+    if not hits:
+        return ToolResult("Nenhum precedente corporativo encontrado para este assunto.", payload)
+    lines = [f"- {event.actor} decidiu {event.decision}: {event.summary}" for event in hits]
+    return ToolResult("\n".join(lines), payload)
+
+
 TOOLS: dict[str, ToolSpec] = {
     spec.name: spec
     for spec in (
@@ -200,6 +356,41 @@ TOOLS: dict[str, ToolSpec] = {
             "calculadora",
             "Avalia uma expressão aritmética. Entrada: expressão, ex.: (120 * 3) / 4.",
             _calculadora,
+        ),
+        ToolSpec(
+            "avaliar_qualidade_report",
+            "Pontua de 0 a 100 o report da tarefa em revisão. Entrada: texto do report.",
+            _avaliar_qualidade_report,
+        ),
+        ToolSpec(
+            "comparar_vs_objetivo",
+            "Mede a cobertura do objetivo pelo report e lista as lacunas. Entrada: livre.",
+            _comparar_vs_objetivo,
+        ),
+        ToolSpec(
+            "checar_riscos",
+            "Classifica riscos por categoria e severidade. Entrada: texto a analisar.",
+            _checar_riscos,
+        ),
+        ToolSpec(
+            "precedentes_corporativos",
+            "Busca decisões passadas que sirvam de precedente. Entrada: assunto.",
+            _precedentes_corporativos,
+        ),
+        ToolSpec(
+            "estimar_custo_beneficio",
+            "Compara o ROI de aprovar, modificar ou rejeitar o report. Entrada: livre.",
+            _estimar_custo_beneficio,
+        ),
+        ToolSpec(
+            "proximos_passos",
+            "Sugere as próximas tarefas a partir das lacunas e riscos. Entrada: livre.",
+            _proximos_passos,
+        ),
+        ToolSpec(
+            "capacidade_do_agente",
+            "Consulta histórico e taxa de rejeição do subordinado. Entrada: livre.",
+            _capacidade_do_agente,
         ),
     )
 }

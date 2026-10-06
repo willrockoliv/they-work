@@ -8,6 +8,14 @@ import type {
   ResourceStatusResponse,
 } from '@/types/api';
 import type { GameState, OfficeLayout, Position } from '@/types/game';
+import type {
+  BootstrapResponse,
+  InitialRequestsResponse,
+  RequestDetailResponse,
+  RequestGraphResponse,
+  RunCycleResponse,
+  StartCycleResponse,
+} from '@/types/network';
 
 import { request } from './http';
 
@@ -52,4 +60,33 @@ export const api = {
 
   communications: (limit = 50) =>
     request<CommunicationsResponse>('/council/communications', { query: { limit } }),
+
+  // --- Rede corporativa (Fase 5) ---
+
+  companyStatus: () => request<BootstrapResponse>('/company/status'),
+
+  bootstrapCompany: () =>
+    request<BootstrapResponse>('/company/bootstrap', { method: 'POST' }),
+
+  submitRequest: (topic: string, description: string) =>
+    request<RequestDetailResponse>('/council/request-action', {
+      method: 'POST',
+      body: { topic, description, submitted_by: 'OBSERVER', auto_deliberate: true },
+    }),
+
+  requests: (limit = 25) =>
+    request<InitialRequestsResponse>('/council/requests', { query: { limit } }),
+
+  requestDetail: (requestId: string) =>
+    request<RequestDetailResponse>(`/council/requests/${requestId}`),
+
+  requestGraph: (requestId: string) =>
+    request<RequestGraphResponse>(`/council/requests/${requestId}/graph`),
+
+  runCycle: (requestId: string) =>
+    request<RunCycleResponse>(`/council/requests/${requestId}/run-cycle`, { method: 'POST' }),
+
+  /** Dispara o turno em segundo plano; o progresso chega pelos eventos `network.*`. */
+  startCycle: (requestId: string) =>
+    request<StartCycleResponse>(`/council/requests/${requestId}/start`, { method: 'POST' }),
 };

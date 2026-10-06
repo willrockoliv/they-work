@@ -99,4 +99,41 @@ describe('SidePanel', () => {
     await user.click(screen.getByRole('button', { name: /fechar painel/i }));
     expect(useUiStore.getState().selectedAgentId).toBeNull();
   });
+
+  it('recolhe para a direita e reabre pela aba', async () => {
+    const user = userEvent.setup();
+    useGameStore.getState().hydrate(makeGameState());
+    useUiStore.getState().selectAgent('agent-1');
+    const { rerender } = render(<SidePanel />);
+
+    await user.click(screen.getByRole('button', { name: /recolher o raio-x/i }));
+    expect(useUiStore.getState().panelCollapsed).toBe(true);
+
+    rerender(<SidePanel />);
+    expect(screen.queryByRole('heading', { name: 'CEO' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /reabrir o raio-x/i }));
+    expect(useUiStore.getState().panelCollapsed).toBe(false);
+
+    rerender(<SidePanel />);
+    expect(screen.getByRole('heading', { name: 'CEO' })).toBeInTheDocument();
+  });
+
+  it('também recolhe quando nenhum agente está selecionado', async () => {
+    const user = userEvent.setup();
+    useUiStore.getState().selectAgent(null);
+    render(<SidePanel />);
+
+    await user.click(screen.getByRole('button', { name: /recolher o raio-x/i }));
+    expect(useUiStore.getState().panelCollapsed).toBe(true);
+  });
+
+  it('selecionar um agente reabre o painel recolhido', () => {
+    useGameStore.getState().hydrate(makeGameState());
+    useUiStore.getState().togglePanelCollapsed();
+    expect(useUiStore.getState().panelCollapsed).toBe(true);
+
+    useUiStore.getState().selectAgent('agent-1');
+    expect(useUiStore.getState().panelCollapsed).toBe(false);
+  });
 });

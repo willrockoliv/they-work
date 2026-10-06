@@ -278,6 +278,30 @@ button[aria-pressed='true'] {
   width: auto;
 }
 
+/* Recolhido: sobra apenas a aba vertical de reabrir. */
+.app.panel-collapsed .side-panel {
+  width: 34px;
+}
+
+.side-panel.collapsed {
+  align-items: center;
+  padding-top: 10px;
+}
+
+.side-panel.collapsed button {
+  width: 26px;
+  height: 56px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.panel-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 10px 0;
+}
+
 .side-panel header {
   padding: 14px 16px 10px;
   border-bottom: 1px solid var(--border);
@@ -627,6 +651,22 @@ button[aria-pressed='true'] {
     border-top: 1px solid var(--border);
   }
 
+  /* Numa coluna só, a aba de reabrir vira uma faixa horizontal no rodapé. */
+  .app.panel-collapsed .side-panel {
+    width: auto;
+  }
+
+  .side-panel.collapsed {
+    flex-direction: row;
+    justify-content: flex-end;
+    padding: 6px 10px;
+  }
+
+  .side-panel.collapsed button {
+    width: 56px;
+    height: 26px;
+  }
+
   .chat-log {
     max-height: 32%;
   }
@@ -635,5 +675,233 @@ button[aria-pressed='true'] {
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
+  }
+}
+
+/* --- Rede corporativa (Fase 5) ------------------------------------------- */
+
+.stage-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.stage-switch button[aria-selected='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.requests-panel {
+  /* O `.stage` é `position: relative` e corta o excesso: sem ancorar aqui, o painel
+     cresce com o conteúdo e a rolagem interna nunca aparece. */
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) 1fr;
+  grid-template-areas:
+    'form detail'
+    'list detail';
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.requests-panel form {
+  grid-area: form;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.requests-panel h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+
+.requests-panel label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.founding {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 10px;
+  background: color-mix(in srgb, #f59e0b 14%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 45%, transparent);
+  border-radius: 6px;
+}
+
+.founding p {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.requests-panel input,
+.requests-panel textarea {
+  padding: 6px 8px;
+  color: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  resize: vertical;
+}
+
+.requests-list {
+  grid-area: list;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* Item de grid tem `min-height: auto`: sem zerar, ele não encolhe e não rola. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.requests-list ul,
+.task-list,
+.network-graph .legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.requests-list li button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 8px;
+  text-align: left;
+}
+
+.requests-list li button span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.request-detail {
+  grid-area: detail;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.request-detail header {
+  position: sticky;
+  top: -12px;
+  z-index: 1;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: -12px -12px 0;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.request-detail header h3 {
+  margin: 0;
+}
+
+.network-graph {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.network-graph svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--text-muted);
+}
+
+.network-graph .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.network-graph .legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border-radius: 2px;
+}
+
+.network-graph .edge-detail {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.network-graph .edge-detail h4,
+.network-graph .edge-detail p {
+  margin: 0 0 4px;
+}
+
+.task-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  margin-bottom: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.task-list li[data-status='REJECTED'] {
+  border-left-color: #fb7185;
+}
+
+.task-list li[data-status='COMPLETED'] {
+  border-left-color: #22c55e;
+}
+
+.task-list li span,
+.requests-panel .muted {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.requests-panel .error {
+  grid-column: 1 / -1;
+  color: #fb7185;
+}
+
+@media (max-width: 1100px) {
+  .requests-panel {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'form'
+      'list'
+      'detail';
+    grid-template-rows: auto auto 1fr;
   }
 }

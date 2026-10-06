@@ -3,8 +3,9 @@ import { create } from 'zustand';
 import { CHAT_LOG_LIMIT, PAUSE_BUFFER_LIMIT } from '@/services/config';
 import type { ConnectionState } from '@/services/socket';
 import type { ReasoningStepType, ResourceStatusResponse } from '@/types/api';
-import type { GameEvent, SessionEventData, StepEventData } from '@/types/events';
+import type { GameEvent, RequestEventData, SessionEventData, StepEventData } from '@/types/events';
 import type { GameAgent, GameClock, GameEconomy, GameState, OfficeLayout } from '@/types/game';
+import type { GraphEdge, GraphTask } from '@/types/network';
 
 export type MessageKind = ReasoningStepType | 'TASK' | 'SYSTEM';
 export type NotificationSeverity = 'info' | 'success' | 'warning' | 'critical';
@@ -52,6 +53,12 @@ export interface GameStoreState {
   buffered: GameEvent[];
   revision: number;
 
+  /** Rede corporativa: arestas, tarefas e pedidos recebidos ao vivo. */
+  networkEdges: GraphEdge[];
+  networkTasks: Record<string, GraphTask>;
+  networkRequests: Record<string, RequestEventData>;
+  networkRevision: number;
+
   hydrate: (state: GameState) => void;
   applyEvent: (event: GameEvent) => void;
   setConnection: (connection: ConnectionState) => void;
@@ -69,6 +76,9 @@ function nextId(prefix: string): string {
   sequence += 1;
   return `${prefix}-${sequence}`;
 }
+
+/** Teto da fila de arestas do grafo mantida em memória no cliente. */
+const NETWORK_EDGE_LIMIT = 400;
 
 const MESSAGE_PREFIX: Record<MessageKind, string> = {
   TASK: 'Tarefa',
@@ -97,6 +107,10 @@ function initialState() {
     speed: 1 as SimulationSpeed,
     buffered: [] as GameEvent[],
     revision: 0,
+    networkEdges: [] as GraphEdge[],
+    networkTasks: {} as Record<string, GraphTask>,
+    networkRequests: {} as Record<string, RequestEventData>,
+    networkRevision: 0,
   };
 }
 
@@ -394,6 +408,37 @@ export const useGameStore = create<GameStoreState>()((set, get) => {
           messages: draft.messages,
           bubbles: draft.bubbles,
           revision: state.revision + 1,
+        };
+      }
+
+      case 'network.edge': {
+        // O barramento pode reentregar uma aresta: a chave é o id, nunca a ordem.
+        if (state.networkEdges.some((edge) => edge.id === event.data.id)) return {};
+        return {
+          networkEdges: [...state.networkEdges, event.data].slice(-NETWORK_EDGE_LIMIT),
+          networkRevision: state.networkRevision + 1,
+        };
+      }
+
+      case 'network.task':
+        return {
+          networkTasks: { ...state.networkTasks, [event.data.id]: event.data },
+          networkRevision: state.networkRevision + 1,
+        };
+
+      case 'network.request': {
+        const closed = event.data.status === 'COMPLETED' || event.data.status === 'FAILED';
+        return {
+          networkRequests: { ...state.networkRequests, [event.data.id]: event.data },
+          networkRevision: state.networkRevision + 1,
+          notifications: closed
+            ? notify(
+                state.notifications,
+                event.data.status === 'COMPLETED' ? 'success' : 'warning',
+                `Pedido ${event.data.status === 'COMPLETED' ? 'concluído' : 'encerrado'}`,
+                `${event.data.topic}: ${truncate(event.data.narrative ?? '', 90)}`,
+              )
+            : state.notifications,
         };
       }
 

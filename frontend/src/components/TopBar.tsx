@@ -28,6 +28,8 @@ export function TopBar(): React.JSX.Element {
   const connection = useGameStore((state) => state.connection);
   const theme = useUiStore((state) => state.theme);
   const toggleTheme = useUiStore((state) => state.toggleTheme);
+  const stageView = useUiStore((state) => state.stageView);
+  const setStageView = useUiStore((state) => state.setStageView);
 
   const connectionInfo = CONNECTION_LABEL[connection] ?? CONNECTION_LABEL.closed!;
 
@@ -35,6 +37,25 @@ export function TopBar(): React.JSX.Element {
     <header className="topbar">
       <div className="brand">
         TheyWork<span>escritório virtual</span>
+      </div>
+
+      <div className="stage-switch" role="tablist" aria-label="Visão do palco">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={stageView === 'office'}
+          onClick={() => setStageView('office')}
+        >
+          Escritório
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={stageView === 'network'}
+          onClick={() => setStageView('network')}
+        >
+          Rede corporativa
+        </button>
       </div>
 
       <dl className="metric">

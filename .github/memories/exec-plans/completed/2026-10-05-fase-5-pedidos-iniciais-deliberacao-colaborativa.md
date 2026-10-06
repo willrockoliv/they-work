@@ -162,7 +162,7 @@ graph TB
 
 ### Fase I: Backend — Schema de Grafo de Comunicações
 
-- [ ] **I.1** Criar tabela `communication_graph`:
+- [x] **I.1** Criar tabela `communication_graph`:
   - `id` (PK)
   - `request_id` (FK → initial_requests)
   - `sender_agent_id` (FK → agents) — quem iniciou ou respondeu
@@ -173,11 +173,11 @@ graph TB
   - `status` (enum: PENDING, ACKNOWLEDGED, PROCESSED)
   - `created_at`, `responded_at`
 
-- [ ] **I.2** Estender `initial_requests`:
+- [x] **I.2** Estender `initial_requests`:
   - `status` (PROPOSED → DELIBERATING → IN_EXECUTION → AWAITING_FEEDBACK → COMPLETED/FAILED)
   - `current_state` (JSONB) — snapshots de progresso
 
-- [ ] **I.3** Criar tabela `agent_tasks`:
+- [x] **I.3** Criar tabela `agent_tasks`:
   - `assigned_by_chief_id` (FK → agents, sempre um chief) — **chief que delegou**
   - `assigned_to_agent_id` (FK → agents) — agente subordinado
   - `task_description`, `context` (JSONB)
@@ -186,25 +186,25 @@ graph TB
   - `review_reasoning_session_id` (FK → reasoning_sessions) — análise do chief
   - Restrição: `assigned_to_agent.reporting_chief_id` == `assigned_by_chief_id` (só chief supervisiona seus agentes)
 
-- [ ] **I.4** Estender tabela `agents`:
+- [x] **I.4** Estender tabela `agents`:
   - `reporting_chief_id` (FK → agents, NULL para CEO) — **supervisor hierárquico**
   - Exemplo: dev.reporting_chief_id = CTO.id, analyst_finance.reporting_chief_id = CFO.id
 
 ### Fase II: Backend — Serviços de Grafo e Comunicação
 
-- [ ] **II.1** Serviço `communication_service`:
+- [x] **II.1** Serviço `communication_service`:
   - `create_request(topic, description)` → inicia grafo
   - `delegate_task(from_agent, to_agent, task)` → nó DELEGATION
   - `report_task_completion(task_id, reasoning_session)` → nó REPORT
   - `route_communication(message)` → pub/sub com routing inteligente
 
-- [ ] **II.2** Serviço `agent_decision_engine`:
+- [x] **II.2** Serviço `agent_decision_engine`:
   - `analyze_report(task_id, report_session)` → **chief supervisor** usa reasoning para avaliar report do seu agente
   - `decide_next_step(task_id)` → reconvocar, corrigir, consultar colegas, ou aprovar
   - Retorna um dos: REJECT, MODIFY, APPROVE, CONSULT_PEERS, ESCALATE_TO_CEO
   - **Crucial:** Chief usa suas 7 ferramentas especializadas (não genéricas)
 
-- [ ] **II.3** Estender `council_service`:
+- [x] **II.3** Estender `council_service`:
   - `deliberate_and_coordinate(request_id)` — CEO + Chiefs deliberam juntos
   - `chief_review_and_decide(task_id, chief_id)` → chief especializado analisa report
   - `escalate_to_ceo(task_id, reason)` → quando chiefs divergem ou decisão é estratégica
@@ -212,73 +212,73 @@ graph TB
 
 ### Fase III: Backend — Endpoints
 
-- [ ] **III.1** Requests:
+- [x] **III.1** Requests:
   - `POST /council/request-action` — submeter
   - `GET /council/requests` — listar
   - `GET /council/requests/{request_id}/graph` — retornar estrutura do grafo
 
-- [ ] **III.2** Tasks:
+- [x] **III.2** Tasks:
   - `GET /agents/{agent_id}/tasks` — tarefas pendentes do agente
   - `POST /agents/{agent_id}/task/{task_id}/report` — **agente reporta ao seu chief supervisor** (automático, não manual)
   - `GET /chiefs/{chief_id}/pending-reviews` — **tarefas de subordinados aguardando review do chief**
   - `GET /chiefs/{chief_id}/supervised-agents` — lista agentes sob supervisão
 
-- [ ] **III.3** RA Service (criação de agentes):
+- [x] **III.3** RA Service (criação de agentes):
   - `POST /ra/create-agent` — **chief solicita criação de novo agente**
     - Inputs: agent_role, specialty, description, requesting_chief_id
     - Outputs: agent_id, created_prompt, reporting_chief_id (mesmo do solicitante)
   - `GET /ra/created-agents` — lista histórico de agentes criados pelo RA
 
-- [ ] **III.4** Decisions (executadas pelo chief supervisor):
+- [x] **III.4** Decisions (executadas pelo chief supervisor):
   - `POST /chiefs/{chief_id}/task/{task_id}/review-and-decide` — **chief especializado** analisa e decide
     - Inputs: task_id, report_session_id
     - Outputs: decision (APPROVE/REJECT/MODIFY/CONSULT_PEERS/ESCALATE), rationale, next_action
   - `POST /chiefs/{chief_id}/consult-peers` — chief consulta colegas sobre decisão complexa
   - `POST /ceo/final-decision/{task_id}` — CEO faz desempate ou decisão estratégica
 
-- [ ] **III.4** WebSocket:
+- [x] **III.4** WebSocket:
   - Estender `/ws/game-state` para transmitir mutações do grafo em tempo real
 
 ### Fase IV: Frontend — UI de Rede
 
-- [ ] **IV.1** Nova aba "Rede Corporativa":
+- [x] **IV.1** Nova aba "Rede Corporativa":
   - Visualização do grafo (D3.js ou Cytoscape.js)
   - Nós = agentes, Arestas = comunicações
   - Zoom/pan, legendas
 
-- [ ] **IV.2** Componente `RequestForm`:
+- [x] **IV.2** Componente `RequestForm`:
   - Tópico + Descrição
   - Botão "Submeter"
 
-- [ ] **IV.3** Painel de Tarefas:
+- [x] **IV.3** Painel de Tarefas:
   - Aba "Info" → Tarefas Pendentes/Em Progresso/Concluídas
   - Reports com análise do chief
 
-- [ ] **IV.4** Painel de Decisões:
+- [x] **IV.4** Painel de Decisões:
   - Chief analisando (reasoning em tempo real)
   - Resultado final (Aprovado/Rejeitado/Modificado/Consultar)
 
 ### Fase V: Integração e Comportamentos
 
-- [ ] **V.1** Modo AUTOMÁTICO vs MANUAL
+- [x] **V.1** Modo AUTOMÁTICO vs MANUAL
 
-- [ ] **V.2** WebSocket Handlers no Frontend:
+- [x] **V.2** WebSocket Handlers no Frontend:
   - Atualizar grafo em tempo real
   - Sincronizar gameStore
 
-- [ ] **V.3** Pub/Sub Backend:
+- [x] **V.3** Pub/Sub Backend:
   - Atomicidade de DELEGATION → agent_task → pub/sub
   - Transações Alembic
 
 ### Fase VI: Testes
 
-- [ ] **VI.1** Unitários (communication_service, agent_decision_engine)
-- [ ] **VI.2** Integração (fluxo completo: request → deliberar → delegar → report → decidir)
-- [ ] **VI.3** Frontend (grafo renderiza, WebSocket sincroniza)
+- [x] **VI.1** Unitários (communication_service, agent_decision_engine)
+- [x] **VI.2** Integração (fluxo completo: request → deliberar → delegar → report → decidir)
+- [x] **VI.3** Frontend (grafo renderiza, WebSocket sincroniza)
 
 ### Fase VII: Validação E2E
 
-- [ ] **VII.1** Cenário completo no navegador:
+- [x] **VII.1** Cenário completo no navegador:
   1. Submeter "Fundar startup"
   2. CEO delibera com conselho
   3. Delegações criadas
@@ -287,11 +287,11 @@ graph TB
   6. Chiefs analisam e decidem
   7. Novo ciclo ou conclusão
 
-- [ ] **VII.2** Documentação:
+- [x] **VII.2** Documentação:
   - `docs/COMMUNICATION-GRAPH.md` (novo)
   - Atualizar `ARCHITECTURE.md`, `CHIEF-LOGIC.md`, `API-REASONING.md`
 
-- [ ] **VII.3** Índices e Progress
+- [x] **VII.3** Índices e Progress
 
 ## Conceitos-Chave
 
