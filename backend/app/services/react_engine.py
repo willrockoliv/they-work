@@ -162,12 +162,14 @@ def run_task(
     ctx = ToolContext(db=db, nature=nature, task_id=task_id)
     system_prompt = _system_prompt(agent)
     transcript: list[str] = []
+    degraded: str | None = None
 
     try:
         for iteration in range(max_steps):
-            turn, completion = _next_turn(
+            turn, completion, failure = _next_turn(
                 ollama, model_name, system_prompt, request, transcript, iteration
             )
+            degraded = degraded or failure
             if completion is not None:
                 tracer.account_usage(completion.prompt_tokens, completion.completion_tokens)
 
@@ -183,14 +185,14 @@ def run_task(
             if turn.is_final:
                 conclusion = turn.conclusion or ""
                 tracer.on_conclusion(conclusion, payload={"iteration": iteration + 1})
-                return _settle(db, agent, tracer, conclusion)
+                return _settle(db, agent, tracer, conclusion, error=degraded)
 
             if turn.tool is None:
                 conclusion = thought
                 tracer.on_conclusion(
                     conclusion, payload={"iteration": iteration + 1, "reason": "sem_acao"}
                 )
-                return _settle(db, agent, tracer, conclusion)
+                return _settle(db, agent, tracer, conclusion, error=degraded)
 
             observation = _execute_tool(tracer, ctx, turn, iteration)
             transcript.append(f"Ação: {turn.tool}")
@@ -202,7 +204,7 @@ def run_task(
             f"{transcript[-1] if transcript else 'nenhum'}"
         )
         tracer.on_conclusion(conclusion, payload={"truncated": True, "max_steps": max_steps})
-        return _settle(db, agent, tracer, conclusion, truncated=True)
+        return _settle(db, agent, tracer, conclusion, truncated=True, error=degraded)
     except Exception as exc:
         logger.warning("reasoning.run_failed", error=str(exc))
         if agent is not None:
@@ -222,10 +224,11 @@ def _settle(
     conclusion: str,
     *,
     truncated: bool = False,
+    error: str | None = None,
 ) -> ReasoningSession:
     if agent is not None:
         agent.status = AgentStatus.IDLE
-    session = tracer.complete(conclusion)
+    session = tracer.complete(conclusion, error=error)
     db.flush()
     logger.info("reasoning.run_completed", steps=session.step_count, truncated=truncated)
     return session
@@ -266,8 +269,11 @@ def _next_turn(
     request: TaskRequest,
     transcript: list[str],
     iteration: int,
-) -> tuple[ParsedTurn, OllamaCompletion | None]:
-    """Pede o próximo passo ao modelo; cai no planejador determinístico se falhar."""
+) -> tuple[ParsedTurn, OllamaCompletion | None, str | None]:
+    """Pede o próximo passo ao modelo; cai no planejador determinístico se falhar.
+
+    O terceiro item é o motivo da falha quando o Ollama foi consultado e não respondeu.
+    """
     if ollama is not None:
         prompt = _user_prompt(request, transcript)
         try:
@@ -276,15 +282,16 @@ def _next_turn(
             )
         except OllamaUnavailableError as exc:
             logger.warning("reasoning.ollama_unavailable", error=str(exc))
-        else:
-            parsed = parse_turn(completion.text)
-            if parsed.thought or parsed.tool or parsed.conclusion:
-                return parsed, completion
-            # Modelo ignorou o formato: a resposta crua vira pensamento e conclusão.
-            raw = completion.text.strip()
-            return ParsedTurn(thought=raw, conclusion=raw), completion
+            failure = f"ollama_indisponivel: {exc}"
+            return _fallback_turn(request, transcript, iteration), None, failure
+        parsed = parse_turn(completion.text)
+        if parsed.thought or parsed.tool or parsed.conclusion:
+            return parsed, completion, None
+        # Modelo ignorou o formato: a resposta crua vira pensamento e conclusão.
+        raw = completion.text.strip()
+        return ParsedTurn(thought=raw, conclusion=raw), completion, None
 
-    return _fallback_turn(request, transcript, iteration), None
+    return _fallback_turn(request, transcript, iteration), None, None
 
 
 def _fallback_turn(request: TaskRequest, transcript: list[str], iteration: int) -> ParsedTurn:

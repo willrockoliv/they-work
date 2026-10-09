@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,7 @@ from app.models.enums import (
 from app.models.memory import CorporateMemory
 from app.services import audit_service, react_engine, reasoning_tools, talent_bank
 from app.services.nature_manager import NatureManager
+from app.services.ollama_client import OllamaClient
 from app.services.react_engine import TaskRequest, parse_turn
 from app.services.reasoning_tools import ToolContext
 from tests.conftest import make_react_ollama
@@ -224,6 +226,25 @@ class TestLoop:
         acoes = [s for s in session.steps if s.step_type is ReasoningStepType.ACTION]
         assert session.status is ReasoningStatus.COMPLETED
         assert acoes[0].payload["tool"] == "infraestrutura"
+        assert session.error is None
+
+    def test_falha_do_ollama_fica_registrada_na_sessao(
+        self, db_session: Session, nature: NatureManager
+    ) -> None:
+        falhando = OllamaClient(transport=httpx.MockTransport(lambda _: httpx.Response(500)))
+
+        session = react_engine.run_task(
+            db_session,
+            agent=make_agent(db_session),
+            request=TaskRequest(task="Quanta RAM ainda temos para novos subagentes?"),
+            nature=nature,
+            ollama=falhando,
+        )
+
+        assert session.status is ReasoningStatus.COMPLETED
+        assert session.error is not None
+        assert session.error.startswith("ollama_indisponivel")
+        assert session.conclusion
 
     def test_ferramenta_desconhecida_vira_observacao_de_erro(
         self, db_session: Session, nature: NatureManager

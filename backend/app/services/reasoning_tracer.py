@@ -89,9 +89,9 @@ class ReasoningTracer:
         self._publish("session.started", self._session_event())
         return self.session
 
-    def complete(self, conclusion: str = "") -> ReasoningSession:
-        """Encerra a sessão com sucesso."""
-        return self._finish(ReasoningStatus.COMPLETED, conclusion=conclusion)
+    def complete(self, conclusion: str = "", *, error: str | None = None) -> ReasoningSession:
+        """Encerra a sessão com sucesso; `error` registra degradação sem mudar o status."""
+        return self._finish(ReasoningStatus.COMPLETED, conclusion=conclusion, error=error)
 
     def fail(self, error: str) -> ReasoningSession:
         """Encerra a sessão em erro, preservando os passos já capturados."""

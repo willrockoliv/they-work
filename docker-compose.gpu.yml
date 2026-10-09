@@ -3,6 +3,9 @@
 # Uso: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 services:
   ollama:
+    environment:
+      # A GPU Pascal (compute 6.1) falha com a biblioteca cuda_v13 do Ollama 0.12.11.
+      OLLAMA_LLM_LIBRARY: cuda_v12
     deploy:
       resources:
         reservations:
