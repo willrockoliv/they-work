@@ -107,10 +107,19 @@ estruturados em `GET /nature/alerts`:
 
 ## 5. Etapa 4 — Demissão
 
-`POST /agents/subagents/{id}/dismiss` encerra o contrato:
+A demissão acontece de duas formas:
 
-- O **relatório final** (se enviado) é arquivado em `corporate_memory` como `REPORT` — é o
-  único artefato que sobrevive.
+- **Automática:** ao encerrar o pedido (`close_request`), todo subagente contratado para ele
+  é demitido. O fim do pedido equivale ao fim da sprint.
+- **Manual:** `POST /agents/subagents/{id}/dismiss` encerra um contrato específico.
+
+Antes da demissão, cada report entregue já foi arquivado em `corporate_memory` como `REPORT`,
+independentemente da decisão do Chief. Assim o trabalho sobrevive mesmo que o subagente seja
+demitido sem nota ou sem relatório final.
+
+A demissão sempre grava um registro de encerramento em `corporate_memory` como `DECISION`,
+com o motivo, a nota (se houver) e o relatório final (se enviado).
+
 - A **nota de desempenho** (1–5, opcional) é creditada ao perfil do Banco de Talentos.
 - `status = TERMINATED`, `estimated_ram_mb = 0` e `system_prompt = ""`: a memória de
   trabalho é liberada e a Natureza volta a contabilizar a estação como livre.

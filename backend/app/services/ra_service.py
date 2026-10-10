@@ -465,23 +465,27 @@ def dismiss_subagent(
     final_report: str | None = None,
     rating: int | None = None,
 ) -> Agent:
-    """Demite o subagente, liberando recursos e arquivando apenas o relatório final."""
+    """Demite o subagente, libera recursos e registra o encerramento na memória corporativa."""
     if agent.agent_type is not AgentType.SUBAGENT:
         msg = "Apenas subagentes podem ser demitidos."
         raise ValueError(msg)
 
+    closing = [f"Motivo: {reason}"]
+    if rating is not None:
+        closing.append(f"Nota: {rating}/5")
     if final_report:
-        session.add(
-            CorporateMemory(
-                memory_type=MemoryType.REPORT,
-                title=f"Relatório final — {agent.job_title or agent.name}",
-                content=final_report,
-                author_agent_id=agent.id,
-                author_role=AgentRole.SUBAGENT.value,
-                importance=6,
-                tags={"terms": ["relatorio", "subagente"], "reason": reason},
-            )
+        closing.append(f"Relatório final:\n{final_report}")
+    session.add(
+        CorporateMemory(
+            memory_type=MemoryType.DECISION,
+            title=f"Demissão — {agent.job_title or agent.name}"[:255],
+            content="\n".join(closing),
+            author_agent_id=agent.id,
+            author_role=AgentRole.SUBAGENT.value,
+            importance=6,
+            tags={"terms": ["demissao", "subagente"], "agent_id": str(agent.id), "reason": reason},
         )
+    )
 
     if rating is not None and agent.talent_profile_id is not None:
         profile = session.get(TalentProfile, agent.talent_profile_id)

@@ -147,8 +147,8 @@ registrada como `DOWNGRADED` com narrativa corporativa de contenção de custos.
 
 As **restrições base** valem para todo subagente: escopo limitado à vaga, proibição de
 instanciar outros agentes, proibição de acesso externo, obrigação de perguntar ao gestor
-em vez de supor e obrigação de entregar um relatório final — o único artefato que
-sobrevive à demissão.
+em vez de supor e obrigação de entregar um relatório final. Cada relatório é arquivado em
+`corporate_memory` no momento da entrega, antes de qualquer demissão.
 
 O **formato de saída** varia conforme a complexidade: de "responda em até 5 linhas"
 (`TRIVIAL`) a "explicite o raciocínio passo a passo e finalize com um bloco DECISÃO"

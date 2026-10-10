@@ -30,8 +30,10 @@ from app.models.enums import (
     CommunicationStatus,
     CommunicationType,
     InitialRequestStatus,
+    MemoryType,
     TaskStatus,
 )
+from app.models.memory import CorporateMemory
 from app.models.network import AgentTask, CommunicationEdge, InitialRequest
 from app.models.reasoning import ReasoningSession
 from app.services import (
@@ -363,6 +365,24 @@ def report_task(
     task.status = TaskStatus.AWAITING_REVIEW
     session.flush()
 
+    session.add(
+        CorporateMemory(
+            memory_type=MemoryType.REPORT,
+            title=f"Report — {task.title}"[:255],
+            content=task.report_summary,
+            author_agent_id=agent.id if agent else None,
+            author_role=agent.role.value if agent else None,
+            importance=5,
+            tags={
+                "terms": ["relatorio", "subagente"],
+                "request_id": str(task.request_id),
+                "task_id": str(task.id),
+                "attempt": task.attempt,
+            },
+        )
+    )
+    session.flush()
+
     if request is not None:
         record_edge(
             session,
@@ -546,7 +566,7 @@ def build_graph(session: Session, request: InitialRequest) -> dict[str, Any]:
 def close_request(
     session: Session, request: InitialRequest, *, outcome: str, narrative: str
 ) -> InitialRequest:
-    """Encerra o pedido quando não resta tarefa aberta."""
+    """Encerra o pedido quando não resta tarefa aberta e demite os subagentes contratados."""
     request.status = (
         InitialRequestStatus.COMPLETED if outcome != "FAILED" else InitialRequestStatus.FAILED
     )
@@ -554,6 +574,7 @@ def close_request(
     request.narrative = narrative
     request.resolved_at = utcnow()
     _push_milestone(request, "closed", {"outcome": outcome})
+    _dismiss_hired_subagents(session, request)
 
     audit_service.record_event(
         session,
@@ -619,6 +640,21 @@ def task_event(task: AgentTask) -> dict[str, Any]:
 
 
 # --- Internos ----------------------------------------------------------------
+
+
+def _dismiss_hired_subagents(session: Session, request: InitialRequest) -> None:
+    """Fim do pedido equivale ao fim da sprint: os subagentes contratados são demitidos."""
+    hired_ids = session.scalars(
+        select(CommunicationEdge.recipient_agent_id).where(
+            CommunicationEdge.request_id == request.id,
+            CommunicationEdge.communication_type == CommunicationType.AGENT_CREATED,
+        )
+    ).all()
+    agents = session.scalars(
+        select(Agent).where(Agent.id.in_(hired_ids), Agent.status != AgentStatus.TERMINATED)
+    ).all()
+    for agent in agents:
+        ra_service.dismiss_subagent(session, agent, reason=f"Pedido encerrado: {request.topic}")
 
 
 def _require_supervisor(chief: Agent) -> None:

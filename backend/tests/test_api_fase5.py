@@ -7,8 +7,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
-from app.services import network_orchestrator
+from app.models.agent import Agent
+from app.models.enums import AgentStatus, MemoryType
+from app.models.memory import CorporateMemory
+from app.models.network import InitialRequest
+from app.services import communication_service, network_orchestrator
 
 TOPIC = "Fundar uma startup de triagem documental"
 DESCRIPTION = (
@@ -323,3 +328,68 @@ def test_desempate_do_ceo_via_api(booted: TestClient) -> None:
     response = booted.post(f"/ceo/final-decision/{task_id}")
     assert response.status_code == 200, response.text
     assert response.json()["decision"] in {"APPROVE", "REJECT", "MODIFY"}
+
+
+def _hire_and_delegate(client: TestClient, request_id: str) -> tuple[dict[str, Any], str]:
+    cmo_id = _chief_id(client, "CMO")
+    agent = client.post(
+        "/ra/create-agent",
+        json={
+            "requesting_chief": "CMO",
+            "request_id": request_id,
+            "job_title": "Analista de Mercado",
+            "objective": "Mapear personas e concorrentes do segmento juridico de medio porte",
+            "deliverables": ["Mapa de personas"],
+        },
+    ).json()["agent"]
+    task_id = client.post(
+        f"/chiefs/{cmo_id}/delegate",
+        json={
+            "request_id": request_id,
+            "agent_id": agent["id"],
+            "title": "Frente de mercado",
+            "task_description": "Mapear personas",
+        },
+    ).json()["id"]
+    return agent, task_id
+
+
+def test_report_e_sempre_arquivado_na_memoria_corporativa(
+    booted: TestClient, db_session: Session
+) -> None:
+    request_id = _submit(booted)["request"]["id"]
+    agent, task_id = _hire_and_delegate(booted, request_id)
+
+    reported = booted.post(f"/agents/{agent['id']}/tasks/{task_id}/report")
+    assert reported.status_code == 200, reported.text
+
+    arquivados = db_session.query(CorporateMemory).filter_by(memory_type=MemoryType.REPORT).all()
+    assert len(arquivados) == 1
+    assert arquivados[0].author_agent_id == uuid.UUID(agent["id"])
+    assert arquivados[0].tags["task_id"] == task_id
+
+
+def test_fechamento_do_pedido_demite_subagentes_e_registra(
+    booted: TestClient, db_session: Session
+) -> None:
+    request_id = _submit(booted)["request"]["id"]
+    agent, _ = _hire_and_delegate(booted, request_id)
+
+    pedido = db_session.get(InitialRequest, uuid.UUID(request_id))
+    assert pedido is not None
+    communication_service.close_request(
+        db_session, pedido, outcome="APPROVED", narrative="Pedido concluído."
+    )
+    db_session.commit()
+
+    subagente = db_session.get(Agent, uuid.UUID(agent["id"]))
+    assert subagente is not None
+    assert subagente.status is AgentStatus.TERMINATED
+    registros = (
+        db_session.query(CorporateMemory)
+        .filter_by(memory_type=MemoryType.DECISION, author_agent_id=subagente.id)
+        .all()
+    )
+    assert len(registros) == 1
+    assert "Pedido encerrado" in registros[0].content
+    assert registros[0].tags["agent_id"] == str(subagente.id)

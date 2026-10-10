@@ -280,8 +280,9 @@ linear e cada etapa deixa rastro de auditoria:
    (`prompt_factory`).
 5. **Instanciação** — o subagente é criado com o modelo concedido e passa a reportar ao
    Chief solicitante.
-6. **Demissão** — libera a RAM contabilizada, arquiva o relatório final em
-   `corporate_memory` e credita a nota de desempenho ao perfil.
+6. **Demissão** — libera a RAM contabilizada, registra o encerramento em
+   `corporate_memory` e credita a nota de desempenho ao perfil. Ocorre automaticamente
+   ao encerrar o pedido; cada report já foi arquivado ao ser entregue.
 
 Detalhes em [HIRING-FLOW.md](HIRING-FLOW.md) e [TALENT-BANK.md](TALENT-BANK.md).
 
@@ -320,7 +321,7 @@ pode custar uma rodada de LLM.
 Monta o system prompt do subagente em seções fixas (objetivo, entregáveis, ferramentas,
 restrições, formato de saída). As `BASE_CONSTRAINTS` são invariantes do domínio: nenhum
 subagente pode instanciar outros agentes nem acessar recursos externos, e todo subagente
-deve produzir um relatório final — o único artefato que sobrevive à sua demissão.
+deve produzir um relatório final, que é arquivado em `corporate_memory` ao ser entregue.
 
 ### 4.8 Observabilidade Cognitiva (Fase 3)
 
@@ -747,4 +748,3 @@ do SQLAlchemy não é thread-safe.
 | `POST /council/requests/{id}/run-cycle` é síncrono | Um turno com inferência real encadeia 6 sessões ReAct e pode levar minutos, segurando a conexão HTTP | As mutações do grafo já chegam ao vivo pelos eventos `network.*`; a execução em background fica para uma fase futura |
 | `CONSULT_PEERS` não coleta a resposta dos pares | As arestas `CONSULTATION` são criadas, mas os Chiefs consultados não raciocinam sobre elas | A tarefa segue em `AWAITING_REVIEW` até `POST /ceo/final-decision/{task_id}` |
 | Cobertura de objetivo compara radicais de 4 letras | "custo"/"customizar" colidem; flexões distantes escapam | Suficiente e determinístico para o domínio; um stemmer RSLP custaria uma dependência nova |
-| Subagentes não são demitidos ao fim do pedido | A rede acumula agentes ociosos consumindo o teto da Natureza | Demitir manualmente via `POST /agents/subagents/{id}/dismiss` |
