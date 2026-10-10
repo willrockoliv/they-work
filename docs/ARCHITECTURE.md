@@ -678,7 +678,7 @@ rede, GPU, WebGL ou PostgreSQL real.
 | `test_api_fase2.py` | Conselho, RA, Banco de Talentos, Natureza e fluxo ponta a ponta |
 | `test_api_fase3.py` | Execução observável, fluxograma, status ao vivo, métricas, retenção, WebSocket e overhead |
 | `test_api_fase4.py` | Planta, estado do mundo, movimentação e o canal `/ws/game-state` |
-| `test_office_map.py` | Geometria da planta, lotação determinística, bench e relógio corporativo |
+| `test_office_map.py` | Geometria da planta, lotação determinística, reuniões e relógio corporativo |
 | `test_ra_service.py` | Triagem, esclarecimento, contratação, demissão, carga e concorrência |
 | `test_talent_bank.py` | Slug, palavras-chave, busca, versionamento, uso e avaliação |
 | `test_council_service.py` | Raciocínio de cada persona, veto do CTO e desempate do CEO |

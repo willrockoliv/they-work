@@ -39,6 +39,18 @@ export function fitZoom(layout: OfficeLayout, viewport: Viewport, padding = 24):
   return Math.min(usableWidth / worldWidth, usableHeight / worldHeight);
 }
 
+/**
+ * Zoom que enquadra um retângulo de tela no viewport, partindo do zoom atual.
+ *
+ * O retângulo e o viewport estão em pixels de tela; o resultado não é limitado
+ * aqui — quem chama aplica os limites da câmera.
+ */
+export function zoomForRect(currentZoom: number, rect: Rect, viewport: Viewport): number {
+  if (rect.width <= 0 || rect.height <= 0) return currentZoom;
+  const ratio = Math.min(viewport.width / rect.width, viewport.height / rect.height);
+  return currentZoom * ratio;
+}
+
 /** Centro do mapa, em tiles. */
 export function layoutCenter(layout: OfficeLayout): Point {
   return { x: layout.columns / 2, y: layout.rows / 2 };

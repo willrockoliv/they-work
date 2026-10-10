@@ -9,8 +9,8 @@ import type {
   ResourceStatusResponse,
 } from './api';
 
-export type RoomKind = 'EXECUTIVE' | 'MEETING' | 'WORKSTATIONS' | 'BENCH' | 'SERVER';
-export type SeatKind = 'CHIEF' | 'MEETING' | 'WORKSTATION' | 'BENCH';
+export type RoomKind = 'EXECUTIVE' | 'MEETING' | 'WORKSTATIONS' | 'SERVER';
+export type SeatKind = 'CHIEF' | 'MEETING' | 'WORKSTATION';
 
 export interface Room {
   id: string;

@@ -8,9 +8,9 @@ import type { StepEventData } from '@/types/events';
 
 import { ChatLog } from './ChatLog';
 
-function step(agentName: string, content: string): StepEventData {
+function step(id: number, agentName: string, content: string): StepEventData {
   return {
-    id: 1,
+    id,
     session_id: `session-${agentName}`,
     sequence: 1,
     step_type: 'THOUGHT',
@@ -31,10 +31,12 @@ function seed(): void {
       makeAgent({ id: 'agent-2', name: 'Analista', agent_type: 'SUBAGENT', role: 'SUBAGENT' }),
     ]),
   );
-  for (const [agentId, name] of [
-    ['agent-1', 'CEO'],
-    ['agent-2', 'Analista'],
-  ] as const) {
+  for (const [index, [agentId, name]] of (
+    [
+      ['agent-1', 'CEO'],
+      ['agent-2', 'Analista'],
+    ] as const
+  ).entries()) {
     game.applyEvent({
       event: 'session.started',
       session_id: `session-${name}`,
@@ -54,7 +56,7 @@ function seed(): void {
     game.applyEvent({
       event: 'step',
       session_id: `session-${name}`,
-      data: step(name, `Pensamento de ${name}`),
+      data: step(index + 1, name, `Pensamento de ${name}`),
     });
   }
 }

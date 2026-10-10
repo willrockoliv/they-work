@@ -140,3 +140,20 @@ class MoveRequest(BaseModel):
 
     x: float = Field(ge=0)
     y: float = Field(ge=0)
+
+
+class ChatHistoryMessage(BaseModel):
+    """Fala do log de comunicações, no mesmo formato do feed ao vivo."""
+
+    id: str
+    agent_id: str | None
+    agent_name: str
+    kind: str
+    text: str
+    at: str
+
+
+class ChatHistoryResponse(BaseModel):
+    """Falas recentes em ordem cronológica."""
+
+    messages: list[ChatHistoryMessage] = Field(default_factory=list)

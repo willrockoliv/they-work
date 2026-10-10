@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.config.settings import Settings
 from app.models.agent import Agent
 from app.models.enums import AgentStatus, AgentType, ReasoningStatus
-from app.models.reasoning import ReasoningSession
+from app.models.reasoning import ReasoningSession, ReasoningStep
 from app.services import agent_service, office_map, reasoning_metrics
 from app.services.nature_manager import NatureManager
 
@@ -27,6 +27,12 @@ PROCESS_STARTED_AT = datetime.now(UTC)
 
 #: Quantas sessões recentes são varridas para descobrir a atual de cada agente.
 _RECENT_SESSION_WINDOW = 200
+
+#: Quantas sessões recentes alimentam o histórico do log de comunicações.
+_CHAT_SESSION_WINDOW = 100
+
+#: Status que, no feed ao vivo, viram fala de sistema ao terminar.
+_FAILED_STATUSES = frozenset({ReasoningStatus.FAILED, ReasoningStatus.CANCELLED})
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +99,88 @@ def _latest_sessions(db: Session, agents: Sequence[Agent]) -> dict[uuid.UUID, Re
         if session.agent_id is not None and session.agent_id not in latest:
             latest[session.agent_id] = session
     return latest
+
+
+def chat_history(db: Session, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Falas recentes do log de comunicações, reconstruídas das sessões persistidas.
+
+    Replica o que o frontend gera ao vivo: a tarefa de cada sessão, cada passo do
+    raciocínio e o fracasso ou cancelamento. Devolve as `limit` falas mais recentes
+    em ordem cronológica.
+    """
+    rows = db.execute(
+        select(ReasoningSession, Agent.name)
+        .outerjoin(Agent, Agent.id == ReasoningSession.agent_id)
+        .order_by(ReasoningSession.started_at.desc(), ReasoningSession.id.desc())
+        .limit(_CHAT_SESSION_WINDOW)
+    ).all()
+    if not rows:
+        return []
+
+    sessions_by_id: dict[uuid.UUID, tuple[ReasoningSession, str | None]] = {
+        session.id: (session, agent_name) for session, agent_name in rows
+    }
+    messages: list[tuple[datetime, dict[str, Any]]] = []
+
+    for session, agent_name in rows:
+        speaker = {
+            "agent_id": str(session.agent_id) if session.agent_id else None,
+            "agent_name": agent_name or "Agente",
+        }
+        messages.append(
+            (
+                session.started_at,
+                {
+                    **speaker,
+                    "id": f"task-{session.id}",
+                    "kind": "TASK",
+                    "text": session.task,
+                    "at": session.started_at.isoformat(),
+                },
+            )
+        )
+        if session.status in _FAILED_STATUSES:
+            ended_at = session.finished_at or session.started_at
+            messages.append(
+                (
+                    ended_at,
+                    {
+                        **speaker,
+                        "id": f"fail-{session.id}",
+                        "kind": "SYSTEM",
+                        "text": session.error or "Sessão encerrada sem conclusão.",
+                        "at": ended_at.isoformat(),
+                    },
+                )
+            )
+
+    steps = db.execute(
+        select(
+            ReasoningStep.id,
+            ReasoningStep.session_id,
+            ReasoningStep.step_type,
+            ReasoningStep.content,
+            ReasoningStep.created_at,
+        ).where(ReasoningStep.session_id.in_(list(sessions_by_id)))
+    ).all()
+    for step_id, session_id, step_type, content, created_at in steps:
+        session, step_agent_name = sessions_by_id[session_id]
+        messages.append(
+            (
+                created_at,
+                {
+                    "id": f"step-{step_id}",
+                    "agent_id": str(session.agent_id) if session.agent_id else None,
+                    "agent_name": step_agent_name or "Agente",
+                    "kind": step_type.value,
+                    "text": content,
+                    "at": created_at.isoformat(),
+                },
+            )
+        )
+
+    messages.sort(key=lambda item: item[0])
+    return [message for _, message in messages[-limit:]]
 
 
 def _agent_entry(

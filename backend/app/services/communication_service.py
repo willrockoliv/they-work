@@ -34,7 +34,14 @@ from app.models.enums import (
 )
 from app.models.network import AgentTask, CommunicationEdge, InitialRequest
 from app.models.reasoning import ReasoningSession
-from app.services import agent_service, audit_service, council_service, ra_service, react_engine
+from app.services import (
+    agent_service,
+    audit_service,
+    council_service,
+    office_map,
+    ra_service,
+    react_engine,
+)
 from app.services.council_service import CouncilDecision, Proposal
 from app.services.nature_manager import NatureManager
 from app.services.ollama_client import OllamaClient
@@ -371,6 +378,9 @@ def report_task(
         request.status = InitialRequestStatus.AWAITING_FEEDBACK
         _push_milestone(request, "reported", {"task_id": str(task.id)})
 
+    if chief is not None and agent is not None:
+        _convene_meeting(session, [chief, agent])
+
     audit_service.record_event(
         session,
         event_type=AuditEventType.TASK_REPORTED,
@@ -388,6 +398,13 @@ def report_task(
     session.flush()
     publish_task(task)
     return reasoning
+
+
+def _convene_meeting(session: Session, participants: list[Agent]) -> None:
+    """Report vira reunião: o Chief e o subordinado vão à sala e voltam depois."""
+    office = office_map.get_office_map()
+    office.place_all(agent_service.list_agents(session))
+    office.send_to_meeting([agent.id for agent in participants])
 
 
 # --- Arestas e consultas -----------------------------------------------------

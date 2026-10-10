@@ -43,6 +43,7 @@ export function OfficeCanvas(): React.JSX.Element {
       onHotspot: (_roomId, center) => useUiStore.getState().focusOn(center.x, center.y, 1.6),
       onPan: (dx, dy) => useUiStore.getState().panBy(dx, dy),
       onZoom: (factor) => useUiStore.getState().zoomBy(factor),
+      onZoomArea: (center, zoom) => useUiStore.getState().focusOn(center.x, center.y, zoom),
       onFit: (zoom, center) => useUiStore.getState().applyFit(zoom, center),
     });
     rendererRef.current = renderer;

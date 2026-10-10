@@ -13,6 +13,18 @@ export interface Camera {
 export const MIN_ZOOM = 0.4;
 export const MAX_ZOOM = 3;
 
+/** Dimensões do log de comunicações em pixels. */
+export interface ChatSize {
+  width: number;
+  height: number;
+}
+
+export const CHAT_MIN_WIDTH = 280;
+export const CHAT_MIN_HEIGHT = 160;
+export const CHAT_MAX_WIDTH = 1600;
+export const CHAT_MAX_HEIGHT = 1200;
+const CHAT_SIZE_KEY = 'theywork.chatSize';
+
 export interface UiStoreState {
   selectedAgentId: string | null;
   panelTab: PanelTab;
@@ -21,6 +33,8 @@ export interface UiStoreState {
   panelCollapsed: boolean;
   chatVisible: boolean;
   chatFilterAgentId: string | null;
+  /** `null` = tamanho padrão do CSS. */
+  chatSize: ChatSize | null;
   theme: Theme;
   camera: Camera;
   stageView: StageView;
@@ -35,6 +49,7 @@ export interface UiStoreState {
   closePanel: () => void;
   toggleChat: () => void;
   setChatFilter: (agentId: string | null) => void;
+  setChatSize: (width: number, height: number) => void;
   toggleTheme: () => void;
   setZoom: (zoom: number) => void;
   zoomBy: (factor: number) => void;
@@ -51,6 +66,34 @@ function clampZoom(zoom: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(zoom.toFixed(3))));
 }
 
+function clampChatSize(width: number, height: number): ChatSize {
+  return {
+    width: Math.round(Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, width))),
+    height: Math.round(Math.min(CHAT_MAX_HEIGHT, Math.max(CHAT_MIN_HEIGHT, height))),
+  };
+}
+
+/** Tamanho escolhido pelo usuário, lembrado entre recarregamentos. */
+function readChatSize(): ChatSize | null {
+  try {
+    const raw = window.localStorage.getItem(CHAT_SIZE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ChatSize>;
+    if (typeof parsed.width !== 'number' || typeof parsed.height !== 'number') return null;
+    return clampChatSize(parsed.width, parsed.height);
+  } catch {
+    return null;
+  }
+}
+
+function writeChatSize(size: ChatSize): void {
+  try {
+    window.localStorage.setItem(CHAT_SIZE_KEY, JSON.stringify(size));
+  } catch {
+    // Armazenamento indisponível: o tamanho vale apenas para esta sessão.
+  }
+}
+
 export const useUiStore = create<UiStoreState>()((set, get) => ({
   selectedAgentId: null,
   panelTab: 'info',
@@ -58,6 +101,7 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
   panelCollapsed: false,
   chatVisible: true,
   chatFilterAgentId: null,
+  chatSize: readChatSize(),
   theme: 'dark',
   camera: DEFAULT_CAMERA,
   stageView: 'office',
@@ -86,6 +130,12 @@ export const useUiStore = create<UiStoreState>()((set, get) => ({
   toggleChat: () => set((state) => ({ chatVisible: !state.chatVisible })),
 
   setChatFilter: (chatFilterAgentId) => set({ chatFilterAgentId }),
+
+  setChatSize: (width, height) => {
+    const size = clampChatSize(width, height);
+    writeChatSize(size);
+    set({ chatSize: size });
+  },
 
   toggleTheme: () => {
     const theme: Theme = get().theme === 'dark' ? 'light' : 'dark';

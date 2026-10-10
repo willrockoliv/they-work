@@ -14,6 +14,7 @@ import {
   stepDistance,
   tileToPixel,
   visibleTileBounds,
+  zoomForRect,
 } from './layoutMath';
 
 describe('conversão de coordenadas', () => {
@@ -21,6 +22,24 @@ describe('conversão de coordenadas', () => {
     const pixel = tileToPixel({ x: 3, y: 4 }, 32);
     expect(pixel).toEqual({ x: 112, y: 144 });
     expect(pixelToTile(pixel, 32)).toEqual({ x: 3, y: 4 });
+  });
+});
+
+describe('zoomForRect', () => {
+  it('amplia o zoom para que a área escolhida preencha o viewport no eixo mais restrito', () => {
+    // Área 400x200 num viewport 800x600: o eixo X limita, então o zoom dobra.
+    const zoom = zoomForRect(1, { x: 0, y: 0, width: 400, height: 200 }, { width: 800, height: 600 });
+    expect(zoom).toBeCloseTo(2);
+  });
+
+  it('reduz o zoom quando a área escolhida é maior que o viewport', () => {
+    const zoom = zoomForRect(2, { x: 0, y: 0, width: 1600, height: 600 }, { width: 800, height: 600 });
+    expect(zoom).toBeCloseTo(1);
+  });
+
+  it('mantém o zoom atual para uma área degenerada', () => {
+    const zoom = zoomForRect(1.5, { x: 0, y: 0, width: 0, height: 10 }, { width: 800, height: 600 });
+    expect(zoom).toBe(1.5);
   });
 });
 

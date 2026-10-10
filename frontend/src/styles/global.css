@@ -528,6 +528,26 @@ button[aria-pressed='true'] {
   list-style: none;
   overflow-y: auto;
   font-size: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Alça no canto superior direito: arrastar redimensiona o log. */
+.chat-log-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+  touch-action: none;
+  border-top-right-radius: var(--radius);
+  background: linear-gradient(225deg, var(--text-muted) 0 40%, transparent 40%);
+  opacity: 0.6;
+}
+
+.chat-log-resize:hover {
+  opacity: 1;
 }
 
 .chat-log li {

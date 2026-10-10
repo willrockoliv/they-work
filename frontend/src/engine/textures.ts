@@ -95,7 +95,7 @@ function drawServerRack(width: number, height: number): Graphics {
   return g;
 }
 
-/** Cadeira avulsa do bench e da sala de reunião. */
+/** Cadeira avulsa da sala de reunião. */
 function drawChair(size: number): Graphics {
   const g = new Graphics();
   g.roundRect(size * 0.15, size * 0.3, size * 0.7, size * 0.55, 3).fill({ color: PALETTE.chair });

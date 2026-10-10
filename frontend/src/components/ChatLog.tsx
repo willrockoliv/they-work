@@ -1,7 +1,23 @@
 import { useEffect, useRef } from 'react';
 
 import { MESSAGE_PREFIX, useGameStore } from '@/store/gameStore';
-import { useUiStore } from '@/store/uiStore';
+import { type ChatSize, useUiStore } from '@/store/uiStore';
+
+interface ResizeStart {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function sizeStyle(size: ChatSize): React.CSSProperties {
+  return {
+    width: size.width,
+    height: size.height,
+    maxWidth: 'calc(100% - 24px)',
+    maxHeight: 'calc(100% - 24px)',
+  };
+}
 
 /** Janela de chat geral: todas as falas, com filtro por agente. */
 export function ChatLog(): React.JSX.Element | null {
@@ -13,7 +29,11 @@ export function ChatLog(): React.JSX.Element | null {
   const toggleChat = useUiStore((state) => state.toggleChat);
   const filter = useUiStore((state) => state.chatFilterAgentId);
   const setChatFilter = useUiStore((state) => state.setChatFilter);
+  const chatSize = useUiStore((state) => state.chatSize);
+  const setChatSize = useUiStore((state) => state.setChatSize);
   const listRef = useRef<HTMLOListElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const resizeRef = useRef<ResizeStart | null>(null);
 
   const filtered = filter ? messages.filter((message) => message.agentId === filter) : messages;
 
@@ -21,6 +41,24 @@ export function ChatLog(): React.JSX.Element | null {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
   }, [filtered.length]);
+
+  function startResize(event: React.PointerEvent<HTMLDivElement>): void {
+    const box = sectionRef.current?.getBoundingClientRect();
+    if (!box) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = { x: event.clientX, y: event.clientY, width: box.width, height: box.height };
+  }
+
+  function resize(event: React.PointerEvent<HTMLDivElement>): void {
+    const start = resizeRef.current;
+    if (!start) return;
+    // A alça fica no canto superior direito: arrastar para cima e para a direita aumenta o log.
+    setChatSize(start.width + (event.clientX - start.x), start.height + (start.y - event.clientY));
+  }
+
+  function endResize(): void {
+    resizeRef.current = null;
+  }
 
   if (!visible) {
     return (
@@ -36,7 +74,12 @@ export function ChatLog(): React.JSX.Element | null {
   }
 
   return (
-    <section className="chat-log" aria-label="Log de comunicações">
+    <section
+      ref={sectionRef}
+      className="chat-log"
+      aria-label="Log de comunicações"
+      style={chatSize ? sizeStyle(chatSize) : undefined}
+    >
       <header>
         <strong>Comunicações</strong>
         <select
@@ -77,6 +120,14 @@ export function ChatLog(): React.JSX.Element | null {
           </li>
         ))}
       </ol>
+      <div
+        className="chat-log-resize"
+        title="Arraste para redimensionar"
+        onPointerDown={startResize}
+        onPointerMove={resize}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+      />
     </section>
   );
 }

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.models.agent import Agent
 from app.routes.deps import AppSettings, DbSession, Nature
 from app.schemas.game import (
+    ChatHistoryResponse,
     GameStateResponse,
     MoveRequest,
     OfficeLayoutResponse,
@@ -39,6 +40,21 @@ def game_state(
         session, nature, settings, include_terminated=include_terminated
     )
     return GameStateResponse.model_validate(snapshot.to_dict())
+
+
+@router.get(
+    "/game/chat-history",
+    response_model=ChatHistoryResponse,
+    summary="Falas recentes do log de comunicações",
+)
+def chat_history(
+    session: DbSession,
+    limit: int = Query(default=200, ge=1, le=500),
+) -> ChatHistoryResponse:
+    """Reconstrói o log a partir do raciocínio persistido, para sobreviver a recarregamentos."""
+    return ChatHistoryResponse.model_validate(
+        {"messages": game_service.chat_history(session, limit=limit)}
+    )
 
 
 @router.get(

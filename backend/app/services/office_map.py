@@ -9,6 +9,7 @@ reiniciar o backend recoloca todo mundo no lugar canônico.
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field
@@ -25,8 +26,8 @@ TILE_SIZE = 32
 GRID_COLUMNS = 40
 GRID_ROWS = 24
 
-RoomKind = Literal["EXECUTIVE", "MEETING", "WORKSTATIONS", "BENCH", "SERVER"]
-SeatKind = Literal["CHIEF", "MEETING", "WORKSTATION", "BENCH"]
+RoomKind = Literal["EXECUTIVE", "MEETING", "WORKSTATIONS", "SERVER"]
+SeatKind = Literal["CHIEF", "MEETING", "WORKSTATION"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +48,7 @@ class Room:
 
 @dataclass(frozen=True, slots=True)
 class Seat:
-    """Posto de trabalho: uma mesa, uma cadeira de reunião ou um lugar no bench."""
+    """Posto de trabalho: uma mesa de chief, uma mesa de estação ou uma cadeira de reunião."""
 
     id: str
     kind: SeatKind
@@ -76,7 +77,6 @@ ROOMS: tuple[Room, ...] = (
         width=27,
         height=11,
     ),
-    Room(id="bench", label="Bench", kind="BENCH", x=29, y=8, width=10, height=15),
 )
 
 #: Cada Chief tem cadeira cativa — a diretoria nunca é remanejada.
@@ -112,19 +112,7 @@ WORKSTATION_SEATS: tuple[Seat, ...] = tuple(
     for index in range(12)
 )
 
-BENCH_SEATS: tuple[Seat, ...] = tuple(
-    Seat(
-        id=f"bench-{index}",
-        kind="BENCH",
-        room_id="bench",
-        x=31 + (index % 2) * 4,
-        y=11 + (index // 2) * 3,
-        index=index,
-    )
-    for index in range(8)
-)
-
-SEATS: tuple[Seat, ...] = CHIEF_SEATS + MEETING_SEATS + WORKSTATION_SEATS + BENCH_SEATS
+SEATS: tuple[Seat, ...] = CHIEF_SEATS + MEETING_SEATS + WORKSTATION_SEATS
 _SEATS_BY_ID: dict[str, Seat] = {seat.id: seat for seat in SEATS}
 _SEATS_BY_ROLE: dict[AgentRole, Seat] = {
     seat.role: seat for seat in CHIEF_SEATS if seat.role is not None
@@ -145,6 +133,9 @@ HOTSPOTS: tuple[dict[str, Any], ...] = tuple(
 #: O expediente simulado vai das 9h às 18h; 1 segundo real = 1 minuto corporativo.
 WORKDAY_START_MINUTE = 9 * 60
 WORKDAY_MINUTES = 9 * 60
+
+#: Tempo real que o subordinado e o Chief permanecem na sala de reunião após um report.
+MEETING_HOLD_SECONDS = 25.0
 
 
 @dataclass(slots=True)
@@ -176,16 +167,22 @@ class OfficeMap:
 
     def __init__(self) -> None:
         self._placements: dict[uuid.UUID, Placement] = {}
+        #: Reuniões em curso: agente -> (id do posto de reunião, instante de retorno).
+        self._meetings: dict[uuid.UUID, tuple[str, float]] = {}
         self._lock = threading.Lock()
 
-    def place_all(self, agents: Sequence[Agent]) -> dict[uuid.UUID, Placement]:
+    def place_all(
+        self, agents: Sequence[Agent], *, now: float | None = None
+    ) -> dict[uuid.UUID, Placement]:
         """Recalcula a lotação do quadro inteiro e devolve o resultado."""
         assignments = _assign_seats(agents)
         with self._lock:
+            self._release_expired_locked(time.monotonic() if now is None else now)
             live = {agent.id for agent in agents}
             for agent_id in list(self._placements):
                 if agent_id not in live:
                     del self._placements[agent_id]
+                    self._meetings.pop(agent_id, None)
 
             for agent_id, seat in assignments.items():
                 current = self._placements.get(agent_id)
@@ -200,7 +197,8 @@ class OfficeMap:
                     )
                     continue
                 current.seat_id = seat.id if seat else None
-                if not current.manual and seat is not None:
+                # Quem está em reunião caminha para a sala, não para a própria mesa.
+                if not current.manual and seat is not None and agent_id not in self._meetings:
                     current.target_x = float(seat.x)
                     current.target_y = float(seat.y)
             return {agent_id: _copy(p) for agent_id, p in self._placements.items()}
@@ -231,6 +229,7 @@ class OfficeMap:
             placement.x = clamped_x
             placement.y = clamped_y
             placement.manual = True
+            self._meetings.pop(agent_id, None)
             return _copy(placement)
 
     def recall(self, agent_id: uuid.UUID) -> Placement | None:
@@ -240,6 +239,7 @@ class OfficeMap:
             if placement is None:
                 return None
             placement.manual = False
+            self._meetings.pop(agent_id, None)
             seat = _SEATS_BY_ID.get(placement.seat_id or "")
             if seat is not None:
                 placement.target_x = float(seat.x)
@@ -248,10 +248,64 @@ class OfficeMap:
                 placement.y = float(seat.y)
             return _copy(placement)
 
+    def send_to_meeting(
+        self,
+        agent_ids: Sequence[uuid.UUID],
+        *,
+        now: float | None = None,
+        hold_seconds: float = MEETING_HOLD_SECONDS,
+    ) -> list[Placement]:
+        """Leva os agentes à sala de reunião; após `hold_seconds` cada um volta ao posto.
+
+        Quem já está em reunião mantém a cadeira e tem o prazo renovado.
+        """
+        moment = time.monotonic() if now is None else now
+        sent: list[Placement] = []
+        with self._lock:
+            self._release_expired_locked(moment)
+            for agent_id in agent_ids:
+                placement = self._placements.get(agent_id)
+                if placement is None:
+                    continue
+                held = self._meetings.get(agent_id)
+                seat = _SEATS_BY_ID[held[0]] if held else self._free_meeting_seat_locked()
+                self._meetings[agent_id] = (seat.id, moment + hold_seconds)
+                placement.manual = False
+                placement.x = float(seat.x)
+                placement.y = float(seat.y)
+                placement.target_x = float(seat.x)
+                placement.target_y = float(seat.y)
+                sent.append(_copy(placement))
+        return sent
+
+    def _free_meeting_seat_locked(self) -> Seat:
+        taken = {seat_id for seat_id, _ in self._meetings.values()}
+        for seat in MEETING_SEATS:
+            if seat.id not in taken:
+                return seat
+        # Sala cheia: a cadeira é dividida em rodízio, sem recusar a reunião.
+        return MEETING_SEATS[len(self._meetings) % len(MEETING_SEATS)]
+
+    def _release_expired_locked(self, now: float) -> None:
+        """Devolve ao posto quem terminou a reunião."""
+        for agent_id, (_, deadline) in list(self._meetings.items()):
+            if deadline > now:
+                continue
+            del self._meetings[agent_id]
+            placement = self._placements.get(agent_id)
+            seat = _SEATS_BY_ID.get(placement.seat_id or "") if placement else None
+            if placement is None or seat is None:
+                continue
+            placement.x = float(seat.x)
+            placement.y = float(seat.y)
+            placement.target_x = float(seat.x)
+            placement.target_y = float(seat.y)
+
     def reset(self) -> None:
         """Esvazia o escritório (usado entre testes)."""
         with self._lock:
             self._placements.clear()
+            self._meetings.clear()
 
 
 def _copy(placement: Placement) -> Placement:
@@ -281,9 +335,9 @@ def _assign_seats(agents: Iterable[Agent]) -> dict[uuid.UUID, Seat | None]:
             subagents.append(agent)
 
     subagents.sort(key=lambda a: (a.created_at, str(a.id)))
-    pool = [*WORKSTATION_SEATS, *BENCH_SEATS]
+    # Excedente divide as estações em rodízio: nenhum subagente fica sem lugar.
     for position, agent in enumerate(subagents):
-        assignments[agent.id] = pool[position] if position < len(pool) else BENCH_SEATS[-1]
+        assignments[agent.id] = WORKSTATION_SEATS[position % len(WORKSTATION_SEATS)]
     return assignments
 
 

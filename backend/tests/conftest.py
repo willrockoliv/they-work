@@ -5,30 +5,30 @@ from __future__ import annotations
 import os
 
 # Deve ocorrer antes de qualquer import de `app.*`: Settings é cacheado por processo.
-os.environ.setdefault("APP_ENV", "test")
-os.environ.setdefault("LOG_LEVEL", "WARNING")
-os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-os.environ.setdefault("OLLAMA_BASE_URL", "http://ollama.test:11434")
-
-# Os limites da Natureza são fixados aqui para que a suíte não dependa do `.env` da máquina:
-# variáveis de ambiente têm precedência sobre o arquivo em pydantic-settings.
-os.environ.setdefault("NATURE_RAM_LIMIT_MB", "16384")
-os.environ.setdefault("NATURE_VRAM_LIMIT_MB", "4096")
-os.environ.setdefault("NATURE_RESERVED_RAM_MB", "2048")
-os.environ.setdefault("NATURE_RESERVED_VRAM_MB", "512")
-os.environ.setdefault("NATURE_WARNING_THRESHOLD", "0.75")
-os.environ.setdefault("NATURE_CRITICAL_THRESHOLD", "0.90")
-os.environ.setdefault("NATURE_MAX_CONCURRENT_SUBAGENTS", "4")
-os.environ.setdefault("NATURE_MAX_QUEUE_SIZE", "32")
-
-os.environ.setdefault("REASONING_CAPTURE_ENABLED", "true")
-os.environ.setdefault("REASONING_MAX_STEPS", "4")
-os.environ.setdefault("REASONING_STREAM_BUFFER", "64")
-os.environ.setdefault("REASONING_RETENTION_DAYS", "30")
-os.environ.setdefault("REASONING_MAX_CONTENT_CHARS", "8000")
-
-os.environ.setdefault("GAME_TICK_SECONDS", "0.1")
-os.environ.setdefault("GAME_WALK_TILES_PER_SECOND", "3.0")
+# Atribuição direta (não setdefault): o `.env` injetado no container não pode vazar para a suíte.
+os.environ.update(
+    {
+        "APP_ENV": "test",
+        "LOG_LEVEL": "WARNING",
+        "DATABASE_URL": "sqlite+pysqlite:///:memory:",
+        "OLLAMA_BASE_URL": "http://ollama.test:11434",
+        "NATURE_RAM_LIMIT_MB": "16384",
+        "NATURE_VRAM_LIMIT_MB": "4096",
+        "NATURE_RESERVED_RAM_MB": "2048",
+        "NATURE_RESERVED_VRAM_MB": "512",
+        "NATURE_WARNING_THRESHOLD": "0.75",
+        "NATURE_CRITICAL_THRESHOLD": "0.90",
+        "NATURE_MAX_CONCURRENT_SUBAGENTS": "4",
+        "NATURE_MAX_QUEUE_SIZE": "32",
+        "REASONING_CAPTURE_ENABLED": "true",
+        "REASONING_MAX_STEPS": "4",
+        "REASONING_STREAM_BUFFER": "64",
+        "REASONING_RETENTION_DAYS": "30",
+        "REASONING_MAX_CONTENT_CHARS": "8000",
+        "GAME_TICK_SECONDS": "0.1",
+        "GAME_WALK_TILES_PER_SECOND": "3.0",
+    }
+)
 
 import json
 from collections.abc import Iterator

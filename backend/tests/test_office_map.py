@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -93,11 +94,11 @@ class TestLotacao:
         segunda = {a.id: mapa.place_all(agentes)[a.id].seat_id for a in agentes}
         assert primeira == segunda
 
-    def test_excedente_de_subagentes_vai_para_o_bench(self, db_session: Session) -> None:
+    def test_excedente_de_subagentes_divide_as_estacoes(self, db_session: Session) -> None:
         total = len(office_map.WORKSTATION_SEATS) + 1
         agentes = [make_subagent(db_session, f"Agente {i}", minutes=i) for i in range(total)]
         lotacao = office_map.get_office_map().place_all(agentes)
-        assert lotacao[agentes[-1].id].seat_id == "bench-0"
+        assert lotacao[agentes[-1].id].seat_id == "station-0"
 
     def test_agente_que_sai_perde_a_lotacao(self, db_session: Session) -> None:
         a = make_subagent(db_session, "Analista", minutes=1)
@@ -162,3 +163,77 @@ class TestRelogioCorporativo:
         relogio = office_map.corporate_clock(inicio, agora)
         assert relogio["day"] == 2
         assert relogio["label"] == "09:00"
+
+
+class TestReuniao:
+    @staticmethod
+    def _alvo(mapa: office_map.OfficeMap, agent_id: uuid.UUID) -> tuple[float, float]:
+        placement = mapa.get(agent_id)
+        assert placement is not None
+        return (placement.target_x, placement.target_y)
+
+    @staticmethod
+    def _coords(seat: office_map.Seat) -> tuple[float, float]:
+        return (float(seat.x), float(seat.y))
+
+    def test_participantes_vao_para_cadeiras_de_reuniao_distintas(
+        self, db_session: Session
+    ) -> None:
+        a = make_subagent(db_session, "Analista", minutes=1)
+        b = make_subagent(db_session, "Redator", minutes=2)
+        mapa = office_map.get_office_map()
+        mapa.place_all([a, b], now=0.0)
+        mapa.send_to_meeting([a.id, b.id], now=0.0)
+        assert self._alvo(mapa, a.id) == self._coords(office_map.MEETING_SEATS[0])
+        assert self._alvo(mapa, b.id) == self._coords(office_map.MEETING_SEATS[1])
+
+    def test_recalculo_nao_desfaz_a_reuniao(self, db_session: Session) -> None:
+        a = make_subagent(db_session, "Analista", minutes=1)
+        mapa = office_map.get_office_map()
+        mapa.place_all([a], now=0.0)
+        mapa.send_to_meeting([a.id], now=0.0, hold_seconds=10.0)
+        mapa.place_all([a], now=5.0)
+        assert self._alvo(mapa, a.id) == self._coords(office_map.MEETING_SEATS[0])
+
+    def test_ao_fim_do_prazo_o_agente_volta_ao_posto(self, db_session: Session) -> None:
+        a = make_subagent(db_session, "Analista", minutes=1)
+        mapa = office_map.get_office_map()
+        mapa.place_all([a], now=0.0)
+        mapa.send_to_meeting([a.id], now=0.0, hold_seconds=10.0)
+        mapa.place_all([a], now=9.9)
+        assert self._alvo(mapa, a.id) == self._coords(office_map.MEETING_SEATS[0])
+
+        mapa.place_all([a], now=10.0)
+        assert self._alvo(mapa, a.id) == self._coords(office_map.WORKSTATION_SEATS[0])
+
+    def test_novo_report_renova_o_prazo_sem_trocar_de_cadeira(
+        self, db_session: Session
+    ) -> None:
+        a = make_subagent(db_session, "Analista", minutes=1)
+        mapa = office_map.get_office_map()
+        mapa.place_all([a], now=0.0)
+        mapa.send_to_meeting([a.id], now=0.0, hold_seconds=10.0)
+        mapa.send_to_meeting([a.id], now=8.0, hold_seconds=10.0)
+
+        mapa.place_all([a], now=12.0)
+        assert self._alvo(mapa, a.id) == self._coords(office_map.MEETING_SEATS[0])
+
+        mapa.place_all([a], now=18.0)
+        assert self._alvo(mapa, a.id) == self._coords(office_map.WORKSTATION_SEATS[0])
+
+    def test_mover_a_mao_cancela_a_reuniao(self, db_session: Session) -> None:
+        a = make_subagent(db_session, "Analista", minutes=1)
+        mapa = office_map.get_office_map()
+        mapa.place_all([a], now=0.0)
+        mapa.send_to_meeting([a.id], now=0.0)
+        mapa.move(a.id, 20, 5)
+        mapa.place_all([a], now=1.0)
+        assert self._alvo(mapa, a.id) == (20.0, 5.0)
+
+    def test_sala_cheia_nao_recusa_a_reuniao(self, db_session: Session) -> None:
+        total = len(office_map.MEETING_SEATS) + 1
+        agentes = [make_subagent(db_session, f"Agente {i}", minutes=i) for i in range(total)]
+        mapa = office_map.get_office_map()
+        mapa.place_all(agentes, now=0.0)
+        enviados = mapa.send_to_meeting([a.id for a in agentes], now=0.0)
+        assert len(enviados) == total

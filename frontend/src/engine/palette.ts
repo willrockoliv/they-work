@@ -56,7 +56,6 @@ export const ROOM_COLORS: Record<RoomKind, { accent: number }> = {
   EXECUTIVE: { accent: 0x6366f1 },
   MEETING: { accent: 0x0ea5e9 },
   WORKSTATIONS: { accent: 0x14b8a6 },
-  BENCH: { accent: 0xa855f7 },
   SERVER: { accent: 0xf97316 },
 };
 

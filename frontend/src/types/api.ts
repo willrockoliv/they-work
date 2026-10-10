@@ -73,6 +73,20 @@ export interface ReasoningStepRead {
   created_at: string;
 }
 
+/** Fala do log de comunicações, reconstruída pelo backend a partir do raciocínio persistido. */
+export interface ChatHistoryMessage {
+  id: string;
+  agent_id: string | null;
+  agent_name: string;
+  kind: ReasoningStepType | 'TASK' | 'SYSTEM';
+  text: string;
+  at: string;
+}
+
+export interface ChatHistoryResponse {
+  messages: ChatHistoryMessage[];
+}
+
 export interface ReasoningSessionRead {
   id: string;
   agent_id: string | null;

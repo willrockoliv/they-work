@@ -2,7 +2,11 @@ import { create } from 'zustand';
 
 import { CHAT_LOG_LIMIT, PAUSE_BUFFER_LIMIT } from '@/services/config';
 import type { ConnectionState } from '@/services/socket';
-import type { ReasoningStepType, ResourceStatusResponse } from '@/types/api';
+import type {
+  ChatHistoryMessage,
+  ReasoningStepType,
+  ResourceStatusResponse,
+} from '@/types/api';
 import type { GameEvent, RequestEventData, SessionEventData, StepEventData } from '@/types/events';
 import type { GameAgent, GameClock, GameEconomy, GameState, OfficeLayout } from '@/types/game';
 import type { GraphEdge, GraphTask } from '@/types/network';
@@ -67,6 +71,8 @@ export interface GameStoreState {
   setSpeed: (speed: SimulationSpeed) => void;
   dismissNotification: (id: string) => void;
   clearMessages: () => void;
+  /** Insere falas anteriores ao log vivo, sem duplicar ids já conhecidos. */
+  loadHistory: (history: ChatHistoryMessage[]) => void;
   reset: () => void;
 }
 
@@ -127,8 +133,9 @@ export const useGameStore = create<GameStoreState>()((set, get) => {
     kind: MessageKind,
     text: string,
     at: string,
+    id?: string,
   ): void {
-    const message: ChatMessage = { id: nextId('msg'), agentId, agentName, kind, text, at };
+    const message: ChatMessage = { id: id ?? nextId('msg'), agentId, agentName, kind, text, at };
     draft.messages = [...draft.messages, message].slice(-CHAT_LOG_LIMIT);
     if (agentId) {
       draft.bubbles = { ...draft.bubbles, [agentId]: { text, kind, at: Date.now() } };
@@ -284,8 +291,9 @@ export const useGameStore = create<GameStoreState>()((set, get) => {
           agentId,
           agent?.name ?? 'Agente',
           'TASK',
-          truncate(event.data.task),
+          event.data.task,
           new Date().toISOString(),
+          `task-${event.data.id}`,
         );
         return {
           sessions: { ...state.sessions, [event.session_id]: event.data },
@@ -328,8 +336,9 @@ export const useGameStore = create<GameStoreState>()((set, get) => {
           agentId,
           agent?.name ?? 'Agente',
           event.data.step_type,
-          truncate(event.data.content),
+          event.data.content,
           event.data.created_at,
+          `step-${event.data.id}`,
         );
         const steps = state.liveSteps[event.data.session_id] ?? [];
         return {
@@ -368,8 +377,9 @@ export const useGameStore = create<GameStoreState>()((set, get) => {
             agentId,
             agent?.name ?? 'Agente',
             'SYSTEM',
-            truncate(event.data.error ?? 'Sessão encerrada sem conclusão.'),
+            event.data.error ?? 'Sessão encerrada sem conclusão.',
             new Date().toISOString(),
+            `fail-${event.data.id}`,
           );
         }
         return {
@@ -482,6 +492,26 @@ export const useGameStore = create<GameStoreState>()((set, get) => {
       set((state) => ({ notifications: state.notifications.filter((n) => n.id !== id) })),
 
     clearMessages: () => set({ messages: [] }),
+
+    loadHistory: (history) => {
+      const known = new Set(get().messages.map((message) => message.id));
+      const older: ChatMessage[] = history
+        .filter((message) => !known.has(message.id))
+        .map((message) => ({
+          id: message.id,
+          agentId: message.agent_id,
+          agentName: message.agent_name,
+          kind: message.kind,
+          text: message.text,
+          at: message.at,
+        }));
+      if (older.length === 0) return;
+      set((state) => ({
+        messages: [...older, ...state.messages]
+          .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+          .slice(-CHAT_LOG_LIMIT),
+      }));
+    },
 
     reset: () => set(initialState()),
   };

@@ -1,5 +1,6 @@
 import type {
   AgentRead,
+  ChatHistoryResponse,
   CommunicationsResponse,
   NatureAlertsResponse,
   ReasoningFlowResponse,
@@ -28,6 +29,9 @@ export interface AgentsStatusResponse {
 export const api = {
   gameState: (includeTerminated = false) =>
     request<GameState>('/game/state', { query: { include_terminated: includeTerminated } }),
+
+  chatHistory: (limit = 200) =>
+    request<ChatHistoryResponse>('/game/chat-history', { query: { limit } }),
 
   officeMap: () => request<OfficeLayout>('/game/map'),
 

@@ -14,6 +14,7 @@ import { useGameStore } from '@/store/gameStore';
 export function useGameSocket(): void {
   const applyEvent = useGameStore((state) => state.applyEvent);
   const hydrate = useGameStore((state) => state.hydrate);
+  const loadHistory = useGameStore((state) => state.loadHistory);
   const setConnection = useGameStore((state) => state.setConnection);
   const socketRef = useRef<GameSocket | null>(null);
 
@@ -30,6 +31,16 @@ export function useGameSocket(): void {
         console.error('Falha ao carregar o estado inicial do mundo', error);
       });
 
+    // Falas anteriores ao carregamento da página; as ao vivo são deduplicadas por id.
+    void api
+      .chatHistory()
+      .then((response) => {
+        if (!cancelled) loadHistory(response.messages);
+      })
+      .catch((error: unknown) => {
+        console.error('Falha ao carregar o histórico de comunicações', error);
+      });
+
     const socket = new GameSocket({
       url: websocketUrl('/ws/game-state'),
       onEvent: applyEvent,
@@ -44,5 +55,5 @@ export function useGameSocket(): void {
       socket.dispose();
       socketRef.current = null;
     };
-  }, [applyEvent, hydrate, setConnection]);
+  }, [applyEvent, hydrate, loadHistory, setConnection]);
 }

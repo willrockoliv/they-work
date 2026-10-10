@@ -21,7 +21,6 @@ class TestPlantaHttp:
             "meeting",
             "server",
             "floor",
-            "bench",
         }
         assert len(corpo["seats"]) == len(office_map.SEATS)
         assert len(corpo["hotspots"]) == len(office_map.ROOMS)
