@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +18,20 @@ logger = get_logger(__name__)
 
 #: Invocado a cada fragmento de texto recebido do modelo.
 TokenCallback = Callable[[str], None]
+
+
+def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
+    """Executa a corrotina a partir de código síncrono.
+
+    As rotas são síncronas (rodam no threadpool do FastAPI), onde não há loop; se
+    por acaso houver um loop ativo, a corrotina vai para uma thread dedicada.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,18 +168,22 @@ class OllamaClient:
         prompt: str,
         system: str | None = None,
         options: dict[str, Any] | None = None,
+        format: dict[str, Any] | str | None = None,
         on_token: TokenCallback | None = None,
     ) -> OllamaCompletion:
         """Gera texto em streaming, repassando cada fragmento a `on_token`.
 
         O streaming é o que torna o pensamento do agente observável: o chamador
-        recebe os tokens brutos enquanto o modelo ainda está escrevendo.
+        recebe os tokens brutos enquanto o modelo ainda está escrevendo. `format`
+        (`"json"` ou um JSON schema) restringe a saída a JSON válido.
         """
         body: dict[str, Any] = {"model": model, "prompt": prompt, "stream": True}
         if system:
             body["system"] = system
         if options:
             body["options"] = options
+        if format is not None:
+            body["format"] = format
 
         chunks: list[str] = []
         final: dict[str, Any] = {}

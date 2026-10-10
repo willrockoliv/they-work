@@ -7,6 +7,7 @@ import { useUiStore } from '@/store/uiStore';
 import type { InitialRequestRead, RequestGraphResponse, TaskStatus } from '@/types/network';
 
 import { NetworkGraph } from './NetworkGraph';
+import { ReviewEvidencePanel } from './ReviewEvidencePanel';
 
 const STATUS_LABEL: Record<string, string> = {
   PROPOSED: '⏳ proposto',
@@ -250,6 +251,7 @@ export function RequestsPanel(): React.JSX.Element {
                   {task.decision_rationale ? (
                     <p className="muted">{task.decision_rationale}</p>
                   ) : null}
+                  <ReviewEvidencePanel task={task} />
                 </li>
               ))}
             </ul>

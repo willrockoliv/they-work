@@ -23,6 +23,7 @@ from app.schemas.reasoning import (
     ReasoningStepRead,
     RetentionPurgeRequest,
     RetentionPurgeResponse,
+    ReviewMetricsResponse,
 )
 from app.services import react_engine, reasoning_flow, reasoning_metrics, reasoning_service
 from app.services.react_engine import TaskRequest
@@ -134,6 +135,17 @@ def list_sessions(
 def metrics(session: DbSession, since: datetime | None = None) -> ReasoningMetricsResponse:
     return ReasoningMetricsResponse.model_validate(
         reasoning_metrics.collect(session, since=since).to_dict()
+    )
+
+
+@router.get(
+    "/reasoning/metrics/review",
+    response_model=ReviewMetricsResponse,
+    summary="Saúde da revisão do Chief: origem dos vereditos, fallback e concordância",
+)
+def review_metrics(session: DbSession, since: datetime | None = None) -> ReviewMetricsResponse:
+    return ReviewMetricsResponse.model_validate(
+        reasoning_metrics.review_metrics(session, since=since)
     )
 
 

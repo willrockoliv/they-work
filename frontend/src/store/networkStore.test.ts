@@ -33,6 +33,8 @@ function task(id: string, status: GraphTask['status']): GraphTask {
     quality_score: 0,
     decision: null,
     decision_rationale: null,
+    decision_source: null,
+    review_evidence: {},
     report_summary: null,
     report_reasoning_session_id: null,
     review_reasoning_session_id: null,

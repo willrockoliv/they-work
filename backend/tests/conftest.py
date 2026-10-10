@@ -27,6 +27,11 @@ os.environ.update(
         "REASONING_MAX_CONTENT_CHARS": "8000",
         "GAME_TICK_SECONDS": "0.1",
         "GAME_WALK_TILES_PER_SECOND": "3.0",
+        "CHIEF_REVIEW_MODE": "shadow",
+        "CHIEF_JUDGE_MODEL": "phi4-mini:3.8b",
+        "CHIEF_REVIEW_MAX_ATTEMPTS": "3",
+        "CHIEF_DECISION_SEED": "42",
+        "CHIEF_DECISION_NUM_CTX": "4096",
     }
 )
 

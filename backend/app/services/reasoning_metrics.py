@@ -19,7 +19,14 @@ from sqlalchemy.orm import Session
 from app.config.settings import Settings, get_settings
 from app.models.agent import Agent
 from app.models.base import utcnow
-from app.models.enums import AuditEventType, ReasoningStatus, ReasoningStepType
+from app.models.enums import (
+    AuditEventType,
+    ChiefDecision,
+    DecisionSource,
+    ReasoningStatus,
+    ReasoningStepType,
+)
+from app.models.network import AgentTask
 from app.models.reasoning import ReasoningSession, ReasoningStep
 from app.services import audit_service
 
@@ -65,6 +72,59 @@ class ReasoningMetrics:
 def cost_of(session: ReasoningSession) -> float:
     """Custo computacional em MB-segundo (RAM reservada vezes tempo de execução)."""
     return round(session.estimated_ram_mb * session.duration_ms / 1000, 2)
+
+
+#: Origens em que o veredito aplicado não veio de um veredito válido do modelo.
+_FALLBACK_SOURCES: frozenset[str] = frozenset(
+    {
+        DecisionSource.UNAVAILABLE.value,
+        DecisionSource.INVALID_OUTPUT.value,
+        DecisionSource.CEO_FALLBACK.value,
+    }
+)
+
+
+def review_metrics(db: Session, *, since: datetime | None = None) -> dict[str, Any]:
+    """Saúde da revisão por evidências: origem dos vereditos, fallback e concordância.
+
+    A concordância do modo shadow (ADR-026) compara o veredito do modelo com o da
+    heurística; é o número que libera a troca para o modo `model`.
+    """
+    stmt = select(AgentTask).where(AgentTask.decision_source.is_not(None))
+    if since is not None:
+        stmt = stmt.where(AgentTask.reviewed_at >= since)
+    tasks = list(db.scalars(stmt))
+    total = len(tasks)
+
+    by_source: dict[str, int] = defaultdict(int)
+    by_decision: dict[str, int] = defaultdict(int)
+    compared = agreed = completed_by_system = tokens = 0
+    for task in tasks:
+        by_source[task.decision_source or ""] += 1
+        if task.decision is not None:
+            by_decision[task.decision.value] += 1
+        evidence = task.review_evidence or {}
+        if evidence.get("agrees") is not None:
+            compared += 1
+            agreed += bool(evidence["agrees"])
+        if evidence.get("protocolo_completado_pelo_sistema"):
+            completed_by_system += 1
+        tokens += int(evidence.get("tokens") or 0)
+
+    def rate(count: int, base: int = total) -> float:
+        return round(count / base, 4) if base else 0.0
+
+    return {
+        "total_reviews": total,
+        "by_source": dict(by_source),
+        "by_decision": dict(by_decision),
+        "escalate_rate": rate(by_decision.get(ChiefDecision.ESCALATE.value, 0)),
+        "fallback_rate": rate(sum(by_source.get(s, 0) for s in _FALLBACK_SOURCES)),
+        "protocol_completed_by_system_rate": rate(completed_by_system),
+        "shadow_compared": compared,
+        "shadow_agreement": rate(agreed, compared),
+        "review_tokens": tokens,
+    }
 
 
 def collect(db: Session, *, since: datetime | None = None) -> ReasoningMetrics:

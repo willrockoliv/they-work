@@ -47,6 +47,8 @@ class FrontBlueprint:
     deliverables: tuple[str, ...]
     tools: tuple[str, ...]
     complexity: TaskComplexity
+    #: Como o Chief julga a entrega — verificável, distinto da lista de entregáveis.
+    criteria: tuple[str, ...] = ()
 
 
 FRONTS: tuple[FrontBlueprint, ...] = (
@@ -58,6 +60,11 @@ FRONTS: tuple[FrontBlueprint, ...] = (
         deliverables=("Desenho da arquitetura", "Plano de testes", "Riscos técnicos"),
         tools=("memoria_corporativa", "infraestrutura"),
         complexity=TaskComplexity.COMPLEX,
+        criteria=(
+            "Arquitetura nomeia os componentes e como se comunicam",
+            "Plano de testes define o que é testado e o critério de aprovação",
+            "Cada risco técnico traz impacto e mitigação",
+        ),
     ),
     FrontBlueprint(
         role=AgentRole.CMO,
@@ -67,6 +74,11 @@ FRONTS: tuple[FrontBlueprint, ...] = (
         deliverables=("Mapa de personas", "Análise de concorrentes", "Plano de canais"),
         tools=("memoria_corporativa",),
         complexity=TaskComplexity.MODERATE,
+        criteria=(
+            "Personas descritas com dores e critérios de compra",
+            "Concorrentes nomeados com preço ou posicionamento",
+            "Canais priorizados com justificativa",
+        ),
     ),
     FrontBlueprint(
         role=AgentRole.CFO,
@@ -76,6 +88,12 @@ FRONTS: tuple[FrontBlueprint, ...] = (
         deliverables=("Projeção de receita", "Estrutura de custos", "Ponto de equilíbrio"),
         tools=("calculadora", "memoria_corporativa"),
         complexity=TaskComplexity.MODERATE,
+        criteria=(
+            "Ponto de equilíbrio calculado como custos fixos dividido por preço menos custo "
+            "variável",
+            "Premissas numéricas com unidade e origem declarada",
+            "Custos separados em fixos e variáveis",
+        ),
     ),
 )
 
@@ -236,7 +254,8 @@ def _staff_and_delegate(
                         f"Contexto: {request.description} Entregue: "
                         f"{', '.join(front.deliverables)}."
                     ),
-                    acceptance_criteria=front.deliverables,
+                    acceptance_criteria=front.criteria or front.deliverables,
+                    deliverables=front.deliverables,
                     context={"area": front.area, "chief": front.role.value},
                 ),
             )

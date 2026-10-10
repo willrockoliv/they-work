@@ -9,15 +9,10 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 **Status:** 📝 Planejado, aguardando decisões pendentes (Etapa 0) para ir a `active/`  
 **Decisões propostas:** ADR-016 a ADR-021 (serviço `browser`, rede `web`, sessão efêmera, validação anti-SSRF, screencast via WS, feature flag desligada por padrão)
 
-### [2026-10-10-revisao-chief-decisao-por-evidencias.md](backlog/2026-10-10-revisao-chief-decisao-por-evidencias.md)
-**Objetivo:** Fazer o modelo do Chief decidir o veredito de cada report com saída estruturada validada, apoiado por ferramentas de evidência verificáveis; heurísticas viram sinais e a ausência de modelo gera ESCALATE  
-**Status:** 📝 Planejado, aguardando decisões pendentes (Etapa 0) para ir a `active/`  
-**Decisões propostas:** ADR-022 a ADR-026 (decisão estruturada com exploração separada, evidências como fatos, juiz por critério com citação verificada, vetos mínimos, rollout em shadow)
-
 
 ## .github/memories/exec-plans/active/ - planos em andamento
 
-*Nenhum plano em andamento.*
+Nenhum plano ativo no momento.
 
 
 ## .github/memories/exec-plans/completed/ - planos completados
@@ -52,6 +47,13 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 **Entregas:** ADRs 012–015 (reuso de `reports_to_id` como vínculo de supervisão, veredito determinístico como piso, grafo em SVG sem D3/Cytoscape, reuso do barramento da Fase 3) · `InitialRequest` + `AgentTask` + `CommunicationEdge` com 10 tipos de aresta · `report_analysis` determinístico alimentando as 7 ferramentas de revisão do Chief · `agent_decision_engine` com APPROVE/REJECT/MODIFY/CONSULT_PEERS/ESCALATE, reconvocação, subtarefa e desempate do CEO · invariante de hierarquia inviolável (o RA cria agentes mas nunca supervisiona) · `network_orchestrator` com turno automático de 3 frentes · 13 endpoints REST + 3 eventos novos no `WS /ws/game-state` · migração `0004_fase_5_rede_corporativa` · aba "Rede corporativa" com grafo SVG de layout determinístico · 340 testes no backend + 84 no frontend  
 **Documentação:** [docs/COMMUNICATION-GRAPH.md](../../docs/COMMUNICATION-GRAPH.md)  
 **Progresso:** [2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa-progress.md](progress/2026-10-05-fase-5-pedidos-iniciais-deliberacao-colaborativa-progress.md)
+
+### [2026-10-10-revisao-chief-decisao-por-evidencias.md](completed/2026-10-10-revisao-chief-decisao-por-evidencias.md)
+**Objetivo:** Fazer o modelo do Chief decidir o veredito de cada report com saída estruturada validada, apoiado por ferramentas de evidência verificáveis; heurísticas viram sinais e a ausência de modelo gera ESCALATE  
+**Status:** ✅ Concluído em 2026-10-10 (com débitos: 6.4 e 7.2 não verificados na sessão, cobertura 97%)  
+**Decisões:** ADR-022 a ADR-026 (decisão estruturada com exploração separada, evidências como fatos, juiz por critério com citação verificada, vetos mínimos, rollout em shadow)  
+**Documentação:** [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)  
+**Progresso:** [2026-10-10-revisao-chief-decisao-por-evidencias-progress.md](progress/2026-10-10-revisao-chief-decisao-por-evidencias-progress.md)
 
 
 ## .github/memories/exec-plans/archived/ - planos arquivados

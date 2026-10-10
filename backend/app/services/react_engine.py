@@ -9,12 +9,10 @@ modelo para que a simulação continue observável offline.
 
 from __future__ import annotations
 
-import asyncio
 import re
 import time
 import unicodedata
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,11 +25,21 @@ from app.models.enums import AgentStatus, TaskComplexity
 from app.models.reasoning import ReasoningSession
 from app.services import complexity_classifier, model_catalog, reasoning_tools
 from app.services.nature_manager import NatureManager
-from app.services.ollama_client import OllamaClient, OllamaCompletion, OllamaUnavailableError
+from app.services.ollama_client import (
+    OllamaClient,
+    OllamaCompletion,
+    OllamaUnavailableError,
+    run_sync,
+)
 from app.services.reasoning_tools import ToolContext
 from app.services.reasoning_tracer import ReasoningTracer
 
 logger = get_logger(__name__)
+
+#: Causas pelas quais o turno não veio do modelo (registradas no payload do passo).
+CAUSE_OLLAMA_NONE = "ollama_none"
+CAUSE_OLLAMA_UNAVAILABLE = "ollama_indisponivel"
+CAUSE_INVALID_FORMAT = "formato_invalido"
 
 REACT_INSTRUCTIONS = """Você raciocina em voz alta seguindo estritamente o formato abaixo,
 repetindo o bloco quantas vezes precisar antes de concluir:
@@ -75,6 +83,24 @@ class TaskRequest:
     thread_id: uuid.UUID | None = None
     max_steps: int | None = None
     context: dict[str, Any] = field(default_factory=dict)
+    #: Modo estrito (revisão do Chief): sem modelo não há conclusão, texto cru não
+    #: vira conclusão e `required_tools` precisam ser observadas antes de concluir.
+    strict: bool = False
+    required_tools: tuple[str, ...] = ()
+    #: Ferramentas permitidas (vazio = todas); filtra o catálogo e a execução.
+    tools: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Observed:
+    """Observação de ferramenta, citável como evidência pelo `id`."""
+
+    id: str
+    tool: str
+    tool_input: str
+    output: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
 
 
 _LABELS: dict[str, str] = {
@@ -133,11 +159,13 @@ def run_task(
     ollama: OllamaClient | None = None,
     settings: Settings | None = None,
     task_id: uuid.UUID | None = None,
+    observed: list[Observed] | None = None,
 ) -> ReasoningSession:
     """Executa a tarefa capturando todo o ciclo ReAct em `reasoning_sessions`.
 
     `task_id` liga o ciclo a uma `AgentTask` da rede corporativa (Fase 5), o que
-    habilita as ferramentas de revisão de report do Chief supervisor.
+    habilita as ferramentas de revisão de report do Chief supervisor. Cada
+    observação de ferramenta é anexada a `observed` com um id citável (`O1`, `O2`...).
     """
     config = settings or get_settings()
     complexity = request.complexity or complexity_classifier.classify(request.task).complexity
@@ -159,45 +187,93 @@ def run_task(
         agent.status = AgentStatus.WORKING
         db.flush()
 
-    ctx = ToolContext(db=db, nature=nature, task_id=task_id)
-    system_prompt = _system_prompt(agent)
+    ctx = ToolContext(db=db, nature=nature, task_id=task_id, ollama=ollama, settings=config)
+    system_prompt = _system_prompt(agent, request.tools)
     transcript: list[str] = []
+    evidence = observed if observed is not None else []
+    used_tools: set[str] = set()
     degraded: str | None = None
 
     try:
         for iteration in range(max_steps):
-            turn, completion, failure = _next_turn(
+            turn, completion, cause = _next_turn(
                 ollama, model_name, system_prompt, request, transcript, iteration
             )
-            degraded = degraded or failure
             if completion is not None:
                 tracer.account_usage(completion.prompt_tokens, completion.completion_tokens)
 
+            if request.strict and cause is not None and cause != CAUSE_INVALID_FORMAT:
+                message = f"Sem modelo disponível ({cause}): nenhuma conclusão foi produzida."
+                tracer.on_conclusion(
+                    message, payload={"iteration": iteration + 1, "fallback_cause": cause}
+                )
+                return _settle(db, agent, tracer, message, error=cause)
+            if cause is not None and cause.startswith(CAUSE_OLLAMA_UNAVAILABLE):
+                degraded = degraded or cause
+
             thought = turn.thought or "Avaliando a tarefa com as informações disponíveis."
+            thought_payload: dict[str, Any] = {
+                "iteration": iteration + 1,
+                "raw": _raw_of(completion),
+            }
+            if cause is not None:
+                thought_payload["fallback_cause"] = cause
             tracer.on_thought(
                 thought,
                 tokens=completion.completion_tokens if completion else 0,
                 duration_ms=completion.duration_ms if completion else 0,
-                payload={"iteration": iteration + 1, "raw": _raw_of(completion)},
+                payload=thought_payload,
             )
             transcript.append(f"Pensamento: {thought}")
 
+            if request.strict and cause == CAUSE_INVALID_FORMAT:
+                _nudge(
+                    tracer,
+                    transcript,
+                    "Resposta fora do formato. Responda com 'Ação:' e 'Entrada da Ação:' "
+                    "ou com 'Conclusão:'.",
+                    CAUSE_INVALID_FORMAT,
+                )
+                continue
+
             if turn.is_final:
+                missing = [name for name in request.required_tools if name not in used_tools]
+                if request.strict and missing:
+                    _nudge(
+                        tracer,
+                        transcript,
+                        f"Protocolo incompleto: antes de concluir, use {', '.join(missing)}.",
+                        "protocolo_incompleto",
+                    )
+                    continue
                 conclusion = turn.conclusion or ""
                 tracer.on_conclusion(conclusion, payload={"iteration": iteration + 1})
                 return _settle(db, agent, tracer, conclusion, error=degraded)
 
             if turn.tool is None:
+                if request.strict:
+                    _nudge(
+                        tracer,
+                        transcript,
+                        "Escolha uma Ação da lista de ferramentas ou escreva a Conclusão.",
+                        "sem_acao",
+                    )
+                    continue
                 conclusion = thought
                 tracer.on_conclusion(
                     conclusion, payload={"iteration": iteration + 1, "reason": "sem_acao"}
                 )
                 return _settle(db, agent, tracer, conclusion, error=degraded)
 
-            observation = _execute_tool(tracer, ctx, turn, iteration)
+            item = _execute_tool(
+                tracer, ctx, turn, iteration, f"O{len(evidence) + 1}", request.tools
+            )
+            evidence.append(item)
+            if item.error is None:
+                used_tools.add(item.tool)
             transcript.append(f"Ação: {turn.tool}")
             transcript.append(f"Entrada da Ação: {turn.tool_input}")
-            transcript.append(f"Observação: {observation}")
+            transcript.append(f"Observação [{item.id}]: {item.output}")
 
         conclusion = (
             f"Limite de {max_steps} passos atingido sem conclusão. Último estado conhecido: "
@@ -234,20 +310,40 @@ def _settle(
     return session
 
 
+def _nudge(tracer: ReasoningTracer, transcript: list[str], message: str, reason: str) -> None:
+    """Observação do sistema que devolve o modelo ao protocolo sem encerrar o ciclo."""
+    tracer.on_observation(message, tool=None, error=reason)
+    transcript.append(f"Observação [sistema]: {message}")
+
+
 def _execute_tool(
-    tracer: ReasoningTracer, ctx: ToolContext, turn: ParsedTurn, iteration: int
-) -> str:
+    tracer: ReasoningTracer,
+    ctx: ToolContext,
+    turn: ParsedTurn,
+    iteration: int,
+    evidence_id: str,
+    allowed: tuple[str, ...] = (),
+) -> Observed:
     tool_name = turn.tool or ""
     tracer.on_action(tool_name, turn.tool_input, payload={"iteration": iteration + 1})
 
     spec = reasoning_tools.get_tool(tool_name)
+    if spec is not None and allowed and spec.name not in allowed:
+        spec = None
     if spec is None:
+        hint = reasoning_tools.suggest(tool_name, allowed)
         message = (
-            f"Ferramenta '{tool_name}' não existe. Disponíveis: "
-            f"{', '.join(reasoning_tools.TOOLS)}."
+            f"Ferramenta '{tool_name}' não existe."
+            + (f" Você quis dizer '{hint}'?" if hint else "")
+            + f" Disponíveis: {', '.join(allowed or tuple(reasoning_tools.TOOLS))}."
         )
-        tracer.on_observation(message, tool=tool_name, error="unknown_tool")
-        return message
+        tracer.on_observation(
+            message,
+            tool=tool_name,
+            error="unknown_tool",
+            payload={"evidence_id": evidence_id, "suggestion": hint},
+        )
+        return Observed(evidence_id, tool_name, turn.tool_input, message, error="unknown_tool")
 
     started = time.monotonic()
     result = spec.run(ctx, turn.tool_input)
@@ -257,9 +353,11 @@ def _execute_tool(
         tool=spec.name,
         duration_ms=elapsed,
         error=result.error,
-        payload=result.payload,
+        payload={"evidence_id": evidence_id, **result.payload},
     )
-    return result.output
+    return Observed(
+        evidence_id, spec.name, turn.tool_input, result.output, result.payload, result.error
+    )
 
 
 def _next_turn(
@@ -272,26 +370,27 @@ def _next_turn(
 ) -> tuple[ParsedTurn, OllamaCompletion | None, str | None]:
     """Pede o próximo passo ao modelo; cai no planejador determinístico se falhar.
 
-    O terceiro item é o motivo da falha quando o Ollama foi consultado e não respondeu.
+    O terceiro item é a causa quando o turno não veio do modelo no formato esperado:
+    `ollama_none`, `ollama_indisponivel: <erro>` ou `formato_invalido`.
     """
-    if ollama is not None:
-        prompt = _user_prompt(request, transcript)
-        try:
-            completion = _await(
-                ollama.generate(model=model_name, prompt=prompt, system=system_prompt)
-            )
-        except OllamaUnavailableError as exc:
-            logger.warning("reasoning.ollama_unavailable", error=str(exc))
-            failure = f"ollama_indisponivel: {exc}"
-            return _fallback_turn(request, transcript, iteration), None, failure
-        parsed = parse_turn(completion.text)
-        if parsed.thought or parsed.tool or parsed.conclusion:
-            return parsed, completion, None
-        # Modelo ignorou o formato: a resposta crua vira pensamento e conclusão.
-        raw = completion.text.strip()
-        return ParsedTurn(thought=raw, conclusion=raw), completion, None
+    if ollama is None:
+        return _fallback_turn(request, transcript, iteration), None, CAUSE_OLLAMA_NONE
 
-    return _fallback_turn(request, transcript, iteration), None, None
+    prompt = _user_prompt(request, transcript)
+    try:
+        completion = _await(ollama.generate(model=model_name, prompt=prompt, system=system_prompt))
+    except OllamaUnavailableError as exc:
+        logger.warning("reasoning.ollama_unavailable", error=str(exc))
+        failure = f"{CAUSE_OLLAMA_UNAVAILABLE}: {exc}"
+        return _fallback_turn(request, transcript, iteration), None, failure
+    parsed = parse_turn(completion.text)
+    if parsed.thought or parsed.tool or parsed.conclusion:
+        return parsed, completion, None
+    raw = completion.text.strip()
+    if request.strict:
+        return ParsedTurn(thought=raw), completion, CAUSE_INVALID_FORMAT
+    # Fora do modo estrito, a resposta crua vira pensamento e conclusão.
+    return ParsedTurn(thought=raw, conclusion=raw), completion, CAUSE_INVALID_FORMAT
 
 
 def _fallback_turn(request: TaskRequest, transcript: list[str], iteration: int) -> ParsedTurn:
@@ -306,8 +405,8 @@ def _fallback_turn(request: TaskRequest, transcript: list[str], iteration: int) 
             tool=tool,
             tool_input=tool_input,
         )
-    observations = [line for line in transcript if line.startswith("Observação:")]
-    evidence = observations[-1][len("Observação:") :].strip() if observations else "sem evidências"
+    observations = [line for line in transcript if line.startswith("Observação")]
+    evidence = observations[-1].split(": ", 1)[-1].strip() if observations else "sem evidências"
     return ParsedTurn(
         thought="Reuni o contexto disponível no sandbox e já consigo fechar a resposta.",
         conclusion=(
@@ -333,9 +432,9 @@ def _pick_tool(task: str) -> tuple[str, str]:
     return "memoria_corporativa", task[:120]
 
 
-def _system_prompt(agent: Agent | None) -> str:
+def _system_prompt(agent: Agent | None, tools: tuple[str, ...] = ()) -> str:
     persona = (agent.system_prompt or "").strip() if agent else ""
-    instructions = REACT_INSTRUCTIONS.format(tools=reasoning_tools.catalog())
+    instructions = REACT_INSTRUCTIONS.format(tools=reasoning_tools.catalog(tools))
     return f"{persona}\n\n{instructions}".strip()
 
 
@@ -361,14 +460,5 @@ def _raw_of(completion: OllamaCompletion | None) -> str | None:
 
 
 def _await(coro: Any) -> OllamaCompletion:
-    """Executa a corrotina do Ollama a partir de código síncrono.
-
-    As rotas são síncronas (rodam no threadpool do FastAPI), onde não há loop; se
-    por acaso houver um loop ativo, a corrotina vai para uma thread dedicada.
-    """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)  # type: ignore[no-any-return]
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()  # type: ignore[no-any-return]
+    """Ponte síncrona para o Ollama (ver `ollama_client.run_sync`)."""
+    return run_sync(coro)  # type: ignore[no-any-return]

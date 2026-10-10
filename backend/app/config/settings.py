@@ -75,6 +75,16 @@ class Settings(BaseSettings):
     reasoning_retention_days: int = Field(default=30, gt=0)
     reasoning_max_content_chars: int = Field(default=8_000, gt=0)
 
+    # --- Revisão do Chief (decisão do modelo com evidências) -----------------
+    # `shadow`: o veredito aplicado segue a heurística e o do modelo só é gravado
+    # para comparação; `model`: o veredito do modelo passa a valer.
+    chief_review_mode: Literal["shadow", "model"] = "shadow"
+    # Juiz por critério distinto do autor, para evitar auto-preferência.
+    chief_judge_model: str = "phi4-mini:3.8b"
+    chief_review_max_attempts: int = Field(default=3, gt=0)
+    chief_decision_seed: int = 42
+    chief_decision_num_ctx: int = Field(default=4_096, gt=0)
+
     # --- Mundo 2D (Fase 4) ---------------------------------------------------
     # Intervalo com que `/ws/game-state` recalcula o snapshot para detectar
     # contratações, demissões e mudanças de regime que não emitem evento próprio.

@@ -43,6 +43,52 @@ export type TaskStatus =
 
 export type ChiefDecision = 'APPROVE' | 'REJECT' | 'MODIFY' | 'CONSULT_PEERS' | 'ESCALATE';
 
+/** De onde veio o veredito aplicado (ADR-022 a ADR-026). */
+export type DecisionSource =
+  | 'MODEL'
+  | 'UNAVAILABLE'
+  | 'INVALID_OUTPUT'
+  | 'HEURISTIC_SHADOW'
+  | 'ATTEMPT_LIMIT'
+  | 'CEO_FALLBACK';
+
+/** Critério julgado por `checar_criterios`, com a citação verificada no report. */
+export interface ReviewCriterion {
+  id?: string;
+  criterio: string;
+  atendido: boolean;
+  citacao?: string;
+  citacao_verificada?: boolean;
+  motivo?: string;
+  metodo?: string;
+}
+
+export interface ReviewVerdict {
+  veredito: ChiefDecision;
+  justificativa: string;
+  evidencias: string[];
+  criterios: { criterio: string; atendido: boolean; citacao: string; correcao: string }[];
+}
+
+/** Evidências da revisão. Vazio (`{}`) em tarefas ainda não revisadas. */
+export interface ReviewEvidence {
+  source?: DecisionSource;
+  mode?: 'shadow' | 'model';
+  applied?: ChiefDecision;
+  decision_source?: DecisionSource;
+  heuristic?: ChiefDecision;
+  model_decision?: ChiefDecision | null;
+  agrees?: boolean | null;
+  verdict?: ReviewVerdict | null;
+  criteria?: ReviewCriterion[];
+  vetoes?: string[];
+  errors?: string[];
+  protocolo_completado_pelo_sistema?: string[];
+  tokens?: number;
+  attempt?: number;
+  max_attempts?: number;
+}
+
 export interface InitialRequestRead {
   id: string;
   topic: string;
@@ -99,6 +145,8 @@ export interface GraphTask {
   quality_score: number;
   decision: ChiefDecision | null;
   decision_rationale: string | null;
+  decision_source: DecisionSource | null;
+  review_evidence: ReviewEvidence;
   report_summary: string | null;
   report_reasoning_session_id: string | null;
   review_reasoning_session_id: string | null;
@@ -121,6 +169,7 @@ export interface RequestDetailResponse {
 export interface ReviewDecisionResponse {
   task: Record<string, unknown> & { id: string; title: string; status: TaskStatus };
   decision: ChiefDecision;
+  decision_source: DecisionSource;
   rationale: string;
   quality_score: number;
   achievement_ratio: number;

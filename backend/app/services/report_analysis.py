@@ -1,13 +1,14 @@
-"""Análise determinística de reports — o miolo das 7 ferramentas do Chief supervisor.
+"""Análise determinística de reports — sinais que alimentam a revisão do Chief.
 
 Tudo aqui é offline e reprodutível: heurísticas léxicas sobre o texto do report,
-consultas ao histórico local de tarefas e fórmulas fechadas de custo/benefício.
-Nenhuma chamada de rede. O `agent_decision_engine` usa estas funções tanto para
-alimentar o ciclo ReAct quanto para decidir quando o modelo não está disponível.
+consultas ao histórico local de tarefas e fórmulas fechadas. Nenhuma chamada de
+rede. Estes resultados são **sinais e fatos** para o modelo do Chief; o veredito
+heurístico (`recommend`) só vale no modo shadow (ADR-026).
 """
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -22,6 +23,49 @@ from app.services.complexity_classifier import normalize
 
 #: Comprimento a partir do qual o report é considerado completo em extensão.
 FULL_LENGTH_CHARS = 600
+
+#: Teto de qualidade para report com placeholder ou metatexto.
+ARTIFACT_QUALITY_CAP = 50
+
+#: Fração mínima dos termos de um critério/entregável presentes no report.
+MATCH_RATIO = 0.6
+
+#: Palavras que, nas posições anteriores ao termo, negam a entrega.
+_NEGATIONS: frozenset[str] = frozenset(
+    {"nao", "sem", "falta", "faltou", "faltam", "nenhum", "nenhuma", "pendente", "ausente"}
+)
+NEGATION_WINDOW = 3
+
+_PLACEHOLDER_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?<![A-Za-zÀ-ÿ0-9])[XYZW](?![A-Za-zÀ-ÿ0-9])"),
+    re.compile(r"\b(?:TODO|TBD|XXX+|lorem ipsum)\b", re.I),
+    re.compile(r"\[(?:inserir|preencher|nome|valor|data|número|numero)[^\]]*\]", re.I),
+    re.compile(r"<[a-zà-ÿ _]{2,30}>", re.I),
+)
+
+#: Metatexto de execução: o report descreve o processo do agente em vez da entrega.
+_METATEXT_MARKERS: tuple[str, ...] = (
+    "preciso de contexto",
+    "vou consultar",
+    "reuni o contexto",
+    "com base no contexto interno consultado",
+    "registrando a decisao na memoria corporativa",
+    "como modelo de linguagem",
+    "como uma ia",
+    "nao tenho acesso",
+    "sem modelo disponivel",
+    "passos atingido sem conclusao",
+    "pensamento:",
+    "entrada da acao:",
+    "observacao:",
+)
+
+_UNITS_RE = re.compile(
+    r"^\s*(%|r\$|reais|mil|mi|milhoes|bi|usd|us\$|horas?|h|dias?|meses|mes|anos?|"
+    r"clientes?|usuarios?|unidades?|pessoas|entrevistad\w*|escritorios?|ms|s|gb|mb)\b",
+)
+_NUMBER_RE = re.compile(r"(?<![\w.,])(r\$\s*)?(\d+(?:[.,]\d+)*)")
+_CALC_RE = re.compile(r"\d\s*[-+*/=\u00d7\u00f7]\s*\d")
 
 #: Palavras vazias descartadas na comparação entre objetivo e report.
 _STOPWORDS: frozenset[str] = frozenset(
@@ -82,6 +126,54 @@ _RISK_CATALOG: tuple[tuple[str, tuple[str, ...], str], ...] = (
 )
 
 _SEVERITY_WEIGHT: dict[str, int] = {"HIGH": 25, "MEDIUM": 12, "LOW": 5}
+
+
+@dataclass(frozen=True, slots=True)
+class Artifacts:
+    """Sinais objetivos de report incompleto: placeholder, metatexto, número sem unidade."""
+
+    placeholders: tuple[str, ...] = ()
+    metatext: tuple[str, ...] = ()
+    unitless_numbers: tuple[str, ...] = ()
+
+    @property
+    def blocking(self) -> bool:
+        return bool(self.placeholders or self.metatext)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "placeholders": list(self.placeholders),
+            "metatext": list(self.metatext),
+            "unitless_numbers": list(self.unitless_numbers),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class Premise:
+    """Número citado no report, com a frase de origem."""
+
+    value: str
+    sentence: str
+    calculated: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"value": self.value, "sentence": self.sentence, "calculated": self.calculated}
+
+
+@dataclass(frozen=True, slots=True)
+class DeliverableCheck:
+    """Entregável esperado e o trecho do report que o comprova (se houver)."""
+
+    deliverable: str
+    found: bool
+    excerpt: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "deliverable": self.deliverable,
+            "status": "encontrado" if self.found else "faltando",
+            "excerpt": self.excerpt,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,10 +258,25 @@ class Assessment:
     decision: ChiefDecision
     rationale: str
     next_steps: tuple[str, ...]
+    artifacts: Artifacts = field(default_factory=Artifacts)
+    deliverables: tuple[DeliverableCheck, ...] = ()
 
     @property
     def risk_level(self) -> str:
         return highest_severity(self.risks)
+
+    @property
+    def vetoes(self) -> tuple[str, ...]:
+        """Fatos objetivos que impedem APPROVE, independentemente do modelo (ADR-024)."""
+        reasons: list[str] = []
+        if self.artifacts.placeholders:
+            reasons.append("placeholder: " + ", ".join(self.artifacts.placeholders[:5]))
+        if self.artifacts.metatext:
+            reasons.append("metatexto: " + ", ".join(self.artifacts.metatext[:3]))
+        missing = [check.deliverable for check in self.deliverables if not check.found]
+        if missing:
+            reasons.append("entregável ausente: " + ", ".join(missing[:5]))
+        return tuple(reasons)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -180,22 +287,146 @@ class Assessment:
             "decision": self.decision.value,
             "rationale": self.rationale,
             "next_steps": list(self.next_steps),
+            "artifacts": self.artifacts.to_dict(),
+            "deliverables": [check.to_dict() for check in self.deliverables],
+            "vetoes": list(self.vetoes),
         }
 
 
 def _terms(text: str) -> list[str]:
     """Termos significativos de um texto, normalizados e sem palavras vazias."""
-    return [
-        token
-        for token in normalize(text).split()
-        if len(token) > 3 and token not in _STOPWORDS and not token.isdigit()
-    ]
+    return [token for token in _tokens(text) if _significant(token)]
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", normalize(text))
+
+
+def _significant(token: str) -> bool:
+    return len(token) > 3 and token not in _STOPWORDS and not token.isdigit()
+
+
+def _sentences(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"(?<=[.;!?])\s+|\n+", text) if part.strip()]
+
+
+def _affirmed_terms(text: str) -> list[str]:
+    """Termos do report que não aparecem negados ('não mapeei', 'sem testes')."""
+    affirmed: list[str] = []
+    for sentence in _sentences(text):
+        tokens = _tokens(sentence)
+        for index, token in enumerate(tokens):
+            if not _significant(token):
+                continue
+            window = tokens[max(0, index - NEGATION_WINDOW) : index]
+            if any(word in _NEGATIONS for word in window):
+                continue
+            affirmed.append(token)
+    return affirmed
+
+
+def objective_of(task: AgentTask) -> str:
+    """Objetivo original da frente, sem a instrução de ajuste de uma reconvocação."""
+    return str(task.context.get("objetivo_original") or task.task_description)
+
+
+def criteria_of(task: AgentTask) -> tuple[str, ...]:
+    return tuple(str(item) for item in task.context.get("acceptance_criteria", []))
+
+
+def deliverables_of(task: AgentTask) -> tuple[str, ...]:
+    """Entregáveis definidos pelo Chief na delegação (critérios como fallback legado)."""
+    items = task.context.get("deliverables") or task.context.get("acceptance_criteria", [])
+    return tuple(str(item) for item in items)
+
+
+def _matches(item: str, affirmed: list[str]) -> bool:
+    terms = list(dict.fromkeys(_terms(item)))
+    if not terms:
+        return False
+    hits = sum(1 for term in terms if any(same_root(term, token) for token in affirmed))
+    return hits / len(terms) >= MATCH_RATIO
+
+
+def detect_artifacts(report_text: str) -> Artifacts:
+    """Placeholders (X/Y/Z/W, TODO, [inserir]), metatexto de execução e números sem unidade."""
+    placeholders: list[str] = []
+    for pattern in _PLACEHOLDER_RES:
+        placeholders.extend(match.group(0) for match in pattern.finditer(report_text))
+
+    folded = normalize(report_text)
+    metatext = [marker for marker in _METATEXT_MARKERS if marker in folded]
+
+    unitless: list[str] = []
+    for match in _NUMBER_RE.finditer(folded):
+        if match.group(1):
+            continue
+        tail = folded[match.end() :]
+        if not _UNITS_RE.match(tail):
+            unitless.append(match.group(2))
+
+    return Artifacts(
+        placeholders=tuple(dict.fromkeys(placeholders)),
+        metatext=tuple(metatext),
+        unitless_numbers=tuple(dict.fromkeys(unitless))[:10],
+    )
+
+
+def extract_premises(report_text: str) -> tuple[Premise, ...]:
+    """Números do report com a frase em que aparecem e se há cálculo explícito."""
+    premises: list[Premise] = []
+    for sentence in _sentences(report_text):
+        calculated = _CALC_RE.search(sentence) is not None
+        for match in _NUMBER_RE.finditer(sentence):
+            premises.append(Premise(match.group(0).strip(), sentence[:240], calculated))
+    return tuple(premises[:20])
+
+
+#: Citação mais curta que isso não prova nada (ex.: "sim", "ok").
+MIN_QUOTE_CHARS = 8
+
+
+def _flat(text: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9$%]+", normalize(text)))
+
+
+def verify_quote(quote: str, text: str) -> bool:
+    """A citação existe literalmente no texto (ignorando caixa, acento e pontuação)?"""
+    needle = _flat(quote.strip().strip("\"'“”…").removesuffix("..."))
+    return len(needle) >= MIN_QUOTE_CHARS and needle in _flat(text)
+
+
+def lexical_criterion(criterion: str, report_text: str) -> tuple[bool, str]:
+    """Juiz léxico de reserva: a primeira frase que cobre o critério, sem negação."""
+    for sentence in _sentences(report_text):
+        if _matches(criterion, _affirmed_terms(sentence)):
+            return True, sentence[:240]
+    return False, ""
+
+
+def check_deliverables(
+    report_text: str, deliverables: tuple[str, ...]
+) -> tuple[DeliverableCheck, ...]:
+    """Cada entregável com o trecho do report que o cobre, ou `faltando`."""
+    sentences = _sentences(report_text)
+    checks: list[DeliverableCheck] = []
+    for deliverable in deliverables:
+        excerpt = next(
+            (s for s in sentences if _matches(deliverable, _affirmed_terms(s))),
+            "",
+        )
+        checks.append(DeliverableCheck(deliverable, bool(excerpt), excerpt[:240]))
+    return tuple(checks)
 
 
 def evaluate_quality(
     report_text: str, *, acceptance_criteria: tuple[str, ...] = ()
 ) -> QualityScore:
-    """Escore de qualidade do report a partir de extensão, estrutura e clareza."""
+    """Escore de qualidade do report a partir de extensão, estrutura e clareza.
+
+    Sem critérios de aceitação o peso deles é redistribuído: ausência de critério
+    não vale pontos. Placeholder ou metatexto limitam o escore a `ARTIFACT_QUALITY_CAP`.
+    """
     text = report_text.strip()
     folded = normalize(text)
     notes: list[str] = []
@@ -215,16 +446,25 @@ def evaluate_quality(
     if not has_numbers:
         notes.append("Nenhum dado quantitativo foi apresentado.")
 
-    met = [item for item in acceptance_criteria if any(t in folded for t in _terms(item))]
-    criteria_ratio = len(met) / len(acceptance_criteria) if acceptance_criteria else 1.0
-    if acceptance_criteria and criteria_ratio < 1.0:
-        notes.append(
-            f"{len(acceptance_criteria) - len(met)} critério(s) de aceitação sem evidência."
+    if acceptance_criteria:
+        affirmed = _affirmed_terms(text)
+        met = [item for item in acceptance_criteria if _matches(item, affirmed)]
+        criteria_ratio = len(met) / len(acceptance_criteria)
+        if criteria_ratio < 1.0:
+            notes.append(
+                f"{len(acceptance_criteria) - len(met)} critério(s) de aceitação sem evidência."
+            )
+        score = round(
+            completeness * 0.3 + structure * 0.25 + clarity * 0.2 + criteria_ratio * 100 * 0.25
         )
+    else:
+        score = round((completeness * 0.3 + structure * 0.25 + clarity * 0.2) / 0.75)
 
-    score = round(
-        completeness * 0.3 + structure * 0.25 + clarity * 0.2 + criteria_ratio * 100 * 0.25
-    )
+    artifacts = detect_artifacts(text)
+    if artifacts.blocking:
+        score = min(score, ARTIFACT_QUALITY_CAP)
+        notes.append("Report com placeholder ou metatexto de execução.")
+
     return QualityScore(
         score=max(0, min(100, score)),
         completeness=completeness,
@@ -234,26 +474,33 @@ def evaluate_quality(
     )
 
 
-#: Radical usado para casar flexões do português ('mapear' vs. 'mapeei', 'mapeamento').
+#: Prefixo mínimo comum para casar flexões do português ('mapear' vs. 'mapeei').
 STEM_CHARS = 4
 
 
-def _stem(term: str) -> str:
-    return term[:STEM_CHARS]
+def same_root(a: str, b: str) -> bool:
+    """Mesmo radical: prefixo comum de pelo menos `max(4, menor - 3)` letras.
+
+    'mapear'/'mapeei' casam (prefixo 4), mas 'contrato'/'conteudo' não (exige 5).
+    """
+    if a == b:
+        return True
+    need = max(STEM_CHARS, min(len(a), len(b)) - 3)
+    return len(os.path.commonprefix([a, b])) >= need
 
 
 def compare_vs_objective(objective: str, report_text: str) -> ObjectiveComparison:
-    """Mede a cobertura dos termos do objetivo no texto do report."""
+    """Mede a cobertura dos termos do objetivo no texto do report (ignorando negados)."""
     expected = list(dict.fromkeys(_terms(objective)))
-    delivered = set(_terms(report_text))
+    delivered = sorted(set(_affirmed_terms(report_text)))
     if not expected:
-        return ObjectiveComparison(1.0, (), (), tuple(sorted(delivered)[:5]))
+        return ObjectiveComparison(1.0, (), (), tuple(delivered[:5]))
 
-    delivered_stems = {_stem(token) for token in delivered}
-    covered = tuple(term for term in expected if _stem(term) in delivered_stems)
-    gaps = tuple(term for term in expected if _stem(term) not in delivered_stems)
-    expected_stems = {_stem(term) for term in expected}
-    bonus = tuple(sorted(token for token in delivered if _stem(token) not in expected_stems)[:5])
+    covered = tuple(term for term in expected if any(same_root(term, t) for t in delivered))
+    gaps = tuple(term for term in expected if term not in covered)
+    bonus = tuple(
+        token for token in delivered if not any(same_root(token, t) for t in expected)
+    )[:5]
     return ObjectiveComparison(
         achievement_ratio=len(covered) / len(expected),
         covered=covered,
@@ -372,10 +619,9 @@ def agent_capability(db: Session, agent_id: uuid.UUID | None) -> CapabilityProfi
 
 
 def assess(db: Session, task: AgentTask, report_text: str) -> Assessment:
-    """Avaliação completa do report, com o veredito determinístico do Chief."""
-    criteria = tuple(str(item) for item in task.context.get("acceptance_criteria", []))
-    quality = evaluate_quality(report_text, acceptance_criteria=criteria)
-    comparison = compare_vs_objective(task.task_description, report_text)
+    """Avaliação completa do report, com o veredito heurístico (usado só em shadow)."""
+    quality = evaluate_quality(report_text, acceptance_criteria=criteria_of(task))
+    comparison = compare_vs_objective(objective_of(task), report_text)
     risks = check_risks(report_text)
     decision, rationale = recommend(db, task, quality, comparison, risks)
     return Assessment(
@@ -385,6 +631,8 @@ def assess(db: Session, task: AgentTask, report_text: str) -> Assessment:
         decision=decision,
         rationale=rationale,
         next_steps=identify_next_steps(task, comparison, risks),
+        artifacts=detect_artifacts(report_text),
+        deliverables=check_deliverables(report_text, deliverables_of(task)),
     )
 
 

@@ -79,6 +79,8 @@ class DelegationIntake:
     task_description: str
     acceptance_criteria: tuple[str, ...] = field(default_factory=tuple)
     context: dict[str, Any] = field(default_factory=dict)
+    #: Entregáveis concretos definidos pelo Chief (distintos dos critérios).
+    deliverables: tuple[str, ...] = field(default_factory=tuple)
 
 
 # --- Pedidos -----------------------------------------------------------------
@@ -270,6 +272,8 @@ def delegate_task(
     context = dict(intake.context)
     if intake.acceptance_criteria:
         context["acceptance_criteria"] = list(intake.acceptance_criteria)
+    if intake.deliverables:
+        context["deliverables"] = list(intake.deliverables)
 
     task = AgentTask(
         request_id=request.id,
@@ -332,17 +336,26 @@ def execute_task(
     session.flush()
 
     criteria = task.context.get("acceptance_criteria", [])
+    deliverables = task.context.get("deliverables", [])
+    feedback = task.context.get("feedback", [])
+    context: dict[str, Any] = {
+        "tarefa": task.title,
+        "tentativa": task.attempt,
+        "criterios_de_aceitacao": "; ".join(str(item) for item in criteria) or "nenhum",
+    }
+    if deliverables:
+        context["entregaveis"] = "; ".join(str(item) for item in deliverables)
+    if feedback:
+        context["feedback_do_chief"] = "; ".join(
+            f"{item.get('criterio', '')}: {item.get('correcao', '')}" for item in feedback
+        )
     reasoning = react_engine.run_task(
         session,
         agent=agent,
         request=TaskRequest(
             task=task.task_description,
             thread_id=request.thread_id if request else None,
-            context={
-                "tarefa": task.title,
-                "tentativa": task.attempt,
-                "criterios_de_aceitacao": "; ".join(str(item) for item in criteria) or "nenhum",
-            },
+            context=context,
         ),
         nature=nature,
         ollama=ollama,
@@ -629,6 +642,8 @@ def task_event(task: AgentTask) -> dict[str, Any]:
         "quality_score": task.quality_score,
         "decision": task.decision.value if task.decision else None,
         "decision_rationale": task.decision_rationale,
+        "decision_source": task.decision_source,
+        "review_evidence": task.review_evidence or {},
         "report_summary": task.report_summary,
         "report_reasoning_session_id": (
             str(task.report_reasoning_session_id) if task.report_reasoning_session_id else None

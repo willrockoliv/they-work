@@ -78,6 +78,36 @@ const GRAPH = {
       quality_score: 88,
       decision: 'APPROVE' as const,
       decision_rationale: 'Entrega completa.',
+      decision_source: 'MODEL' as const,
+      review_evidence: {
+        mode: 'model' as const,
+        heuristic: 'MODIFY' as const,
+        model_decision: 'APPROVE' as const,
+        agrees: false,
+        vetoes: [],
+        criteria: [
+          {
+            id: 'C1',
+            criterio: 'Arquitetura nomeia os componentes',
+            atendido: true,
+            citacao: 'API FastAPI comunica com o PostgreSQL',
+            metodo: 'modelo',
+          },
+          {
+            id: 'C2',
+            criterio: 'Riscos com mitigação',
+            atendido: false,
+            motivo: 'termos ausentes ou negados',
+            metodo: 'lexico',
+          },
+        ],
+        verdict: {
+          veredito: 'APPROVE' as const,
+          justificativa: 'Arquitetura descrita com componentes.',
+          evidencias: ['O1', 'O2'],
+          criterios: [],
+        },
+      },
       report_summary: null,
       report_reasoning_session_id: null,
       review_reasoning_session_id: null,
@@ -111,6 +141,7 @@ describe('RequestsPanel', () => {
     render(<RequestsPanel />);
     expect(await screen.findByText(REQUEST.topic)).toBeInTheDocument();
   });
+
 
   it('mantém o botão de submissão travado enquanto o formulário está incompleto', async () => {
     render(<RequestsPanel />);
@@ -181,5 +212,16 @@ describe('RequestsPanel', () => {
     await userEvent.click(button);
 
     expect(vi.mocked(api.startCycle)).toHaveBeenCalledWith('req-1');
+  });
+
+  it('mostra a origem do veredito e os critérios com citação', async () => {
+    useUiStore.getState().selectRequest('req-1');
+    render(<RequestsPanel />);
+
+    expect(await screen.findByText(/Origem: veredito do modelo/)).toBeInTheDocument();
+    expect(screen.getByText(/Modelo: APPROVE/)).toHaveTextContent('divergem');
+    expect(screen.getByText('API FastAPI comunica com o PostgreSQL')).toBeInTheDocument();
+    expect(screen.getByText(/termos ausentes ou negados/)).toBeInTheDocument();
+    expect(screen.getByText(/evidências: O1, O2/)).toBeInTheDocument();
   });
 });

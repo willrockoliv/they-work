@@ -58,6 +58,21 @@ real da ferramenta. Isso impede o agente de alucinar evidências.
 Também são tolerados: acentuação ausente, caixa alta/baixa, `**negrito**` em volta do rótulo
 e conteúdo em múltiplas linhas (as linhas seguintes pertencem ao último rótulo visto).
 
+### Modo estrito (revisão do Chief)
+
+Na revisão de reports (`services/chief_review.py`), o motor roda em modo estrito:
+
+- cada observação recebe um id sequencial (`O1`, `O2`, …) que o veredito final deve citar;
+- só as ferramentas de revisão (`REVIEW_TOOLS`) são aceitas; nomes parecidos são resolvidos
+  por alias e o erro sugere o nome mais próximo;
+- `ler_report` e `checar_criterios` são obrigatórias: conclusão antes delas é recusada com
+  uma instrução para coletar a evidência (se o modelo insistir, o sistema as executa e
+  registra isso em `protocolo_completado_pelo_sistema`);
+- conclusão em texto livre e o texto do planejador determinístico nunca viram veredito: a
+  decisão sai de uma chamada separada com `format` = JSON schema de `ChiefVerdict`;
+- a causa do planejador determinístico fica registrada (`ollama_none`,
+  `ollama_indisponivel`, `formato_invalido`).
+
 Se o modelo ignorar o formato por completo, a resposta crua vira simultaneamente o
 pensamento e a conclusão — a execução nunca trava por desvio de formato.
 

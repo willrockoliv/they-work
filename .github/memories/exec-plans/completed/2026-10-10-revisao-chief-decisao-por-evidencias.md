@@ -65,88 +65,90 @@ flowchart TD
 
 ## Etapa 0 — Decisões pendentes  _(sem dependências)_
 
-- [ ] 0.1 Vetos objetivos (placeholder, metatexto, entregável ausente): veto que impede APPROVE (recomendado) ou apenas fato para o modelo
-- [ ] 0.2 Modelo juiz: modelo distinto do autor, se couber em VRAM (recomendado) ou o mesmo modelo do Chief com temperatura 0
-- [ ] 0.3 Rollout: modo shadow por N revisões antes de trocar o veredito (recomendado) ou troca direta com flag
-- [ ] 0.4 Limite de concordância no golden set para liberar a troca (valor inicial sugerido: 90%)
-- [ ] 0.5 Entregáveis e critérios: definidos pelo Chief na delegação (recomendado) ou extraídos do enunciado
-- [ ] 0.6 Número máximo de tentativas antes de escalonar (confirmar o valor atual no código)
+Decisões tomadas em 2026-10-10 (opções recomendadas, aprovadas com "prossiga"):
+
+- [x] 0.1 Vetos objetivos (placeholder, metatexto, entregável ausente, report sem modelo): **veto que impede APPROVE** (APPROVE vira MODIFY com o motivo)
+- [x] 0.2 Modelo juiz: **distinto do autor**, `CHIEF_JUDGE_MODEL=phi4-mini:3.8b` (2,3 GB de VRAM)
+- [x] 0.3 Rollout: **modo shadow** por padrão (`CHIEF_REVIEW_MODE=shadow`); `model` troca o veredito
+- [x] 0.4 Limite de concordância: **90%** no golden set
+- [x] 0.5 Entregáveis e critérios: **definidos pelo Chief na delegação** (`deliverables` e `acceptance_criteria` estruturados)
+- [x] 0.6 Tentativas: **não havia limite no código** (REJECT/MODIFY podiam reconvocar para sempre). Limite fixado em 3 (`CHIEF_REVIEW_MAX_ATTEMPTS`)
 
 ## Etapa 1 — Correções de base  _(depende de 0.4 e 0.6)_
 
-- [ ] 1.1 Adicionar `format` (JSON schema) ao `OllamaClient.generate`, mantendo `options` para `temperature` e `seed`, com teste via `MockTransport`
-- [ ] 1.2 Remover o fallback por regex de `review_and_decide`: `parse_decision` só aceita saída estruturada validada
-- [ ] 1.3 Sessão `degraded` ou planejador determinístico nunca produz APPROVE automático
-- [ ] 1.4 `_report_text` retorna erro "report ausente" em vez de usar o `query` do modelo
-- [ ] 1.5 Separar `objetivo_original` de `instrucao_de_ajuste` em `ler_tarefa`, para o enunciado de ajuste não contaminar a cobertura
-- [ ] 1.6 Aliases de ferramenta (ex.: `verificar_riscos` → `checar_riscos`) e sugestão do nome mais próximo na mensagem de erro
-- [ ] 1.7 Registrar a causa do planejador determinístico: `ollama_none`, `ollama_indisponivel` ou `formato_invalido`
-- [ ] 1.8 Texto de `_fallback_turn` e saída crua nunca viram conclusão de revisão
+- [x] 1.1 Adicionar `format` (JSON schema) ao `OllamaClient.generate`, mantendo `options` para `temperature` e `seed`, com teste via `MockTransport`
+- [x] 1.2 Remover o fallback por regex de `review_and_decide`: `parse_decision` só aceita saída estruturada validada
+- [x] 1.3 Sessão `degraded` ou planejador determinístico nunca produz APPROVE automático
+- [x] 1.4 `_report_text` retorna erro "report ausente" em vez de usar o `query` do modelo
+- [x] 1.5 Separar `objetivo_original` de `instrucao_de_ajuste` em `ler_tarefa`, para o enunciado de ajuste não contaminar a cobertura
+- [x] 1.6 Aliases de ferramenta (ex.: `verificar_riscos` → `checar_riscos`) e sugestão do nome mais próximo na mensagem de erro
+- [x] 1.7 Registrar a causa do planejador determinístico: `ollama_none`, `ollama_indisponivel` ou `formato_invalido`
+- [x] 1.8 Texto de `_fallback_turn` e saída crua nunca viram conclusão de revisão
 
 ## Etapa 2 — Contrato de decisão estruturado  _(depende de 1)_
 
-- [ ] 2.1 Schema Pydantic `ChiefVerdict`: `veredito` (enum), `justificativa`, `evidencias` (ids de observação), `criterios` (atendido e citação)
-- [ ] 2.2 Separar exploração e decisão: loop ReAct livre até o limite de passos, seguido de chamada final com `format` = `ChiefVerdict` e temperatura 0
-- [ ] 2.3 Validação: falha gera 1 retentativa. Segunda falha gera ESCALATE com motivo `saida_invalida`
-- [ ] 2.4 Gate de protocolo no código: sem `ler_report` e `checar_criterios` observados, a conclusão é recusada e o modelo é instruído a coletar a evidência
-- [ ] 2.5 Persistir `evidencias`, `criterios` e `decision_source` em `AgentTask` (JSON, com variante de dialeto conforme [models/base.py](../../../../backend/app/models/base.py))
-- [ ] 2.6 Migração `0005` do Alembic, testada em SQLite e PostgreSQL
-- [ ] 2.7 Testes: veredito válido, saída inválida com retentativa, protocolo incompleto e sessão degradada
+- [x] 2.1 Schema Pydantic `ChiefVerdict`: `veredito` (enum), `justificativa`, `evidencias` (ids de observação), `criterios` (atendido e citação)
+- [x] 2.2 Separar exploração e decisão: loop ReAct livre até o limite de passos, seguido de chamada final com `format` = `ChiefVerdict` e temperatura 0
+- [x] 2.3 Validação: falha gera 1 retentativa. Segunda falha gera ESCALATE com motivo `saida_invalida`
+- [x] 2.4 Gate de protocolo no código: sem `ler_report` e `checar_criterios` observados, a conclusão é recusada e o modelo é instruído a coletar a evidência
+- [x] 2.5 Persistir `evidencias`, `criterios` e `decision_source` em `AgentTask` (JSON, com variante de dialeto conforme [models/base.py](../../../../backend/app/models/base.py))
+- [x] 2.6 Migração `0005` do Alembic, testada em SQLite e PostgreSQL
+- [x] 2.7 Testes: veredito válido, saída inválida com retentativa, protocolo incompleto e sessão degradada
 
 ## Etapa 3 — Ferramentas de evidência  _(depende de 1; itens 3.1 a 3.5 podem ser feitos em paralelo)_
 
-- [ ] 3.1 `ler_tarefa(task_id)` e `ler_report(task_id)`, ambas com entrada por id
-- [ ] 3.2 `verificar_entregaveis`: cada entregável com status (encontrado ou faltando) e trecho. Depende de 0.5
-- [ ] 3.3 `checar_criterios`: juiz por critério com saída JSON. A citação é verificada por substring normalizada no report. Citação inexistente não conta como evidência
-- [ ] 3.4 `detectar_artefatos` (determinística): placeholders, metatexto de execução e números sem unidade
-- [ ] 3.5 `premissas`: números e premissas do report, cada um com origem (memória, cálculo ou não fundamentada)
-- [ ] 3.6 `calcular` com `Decimal` e unidades explícitas. Break-even como F / (p − v). Remover o ROI de `estimar_custo_beneficio` do fluxo de revisão
-- [ ] 3.7 `historico_feedback(task_id)`: motivos de rejeições anteriores em formato estruturado
-- [ ] 3.8 `memoria_corporativa` com ranking (BM25 simples, sem dependência nova) no lugar da busca por substring
-- [ ] 3.9 Corrigir as heurísticas de [report_analysis](../../../../backend/app/services/report_analysis.py): qualidade sem critério não ganha pontos gratuitos, cobertura com negação e stems válidos. Ajustar testes sem removê-los
+- [x] 3.1 `ler_tarefa(task_id)` e `ler_report(task_id)`, ambas com entrada por id
+- [x] 3.2 `verificar_entregaveis`: cada entregável com status (encontrado ou faltando) e trecho. Depende de 0.5
+- [x] 3.3 `checar_criterios`: juiz por critério com saída JSON. A citação é verificada por substring normalizada no report. Citação inexistente não conta como evidência
+- [x] 3.4 `detectar_artefatos` (determinística): placeholders, metatexto de execução e números sem unidade
+- [x] 3.5 `premissas`: números e premissas do report, cada um com origem (memória, cálculo ou não fundamentada)
+- [x] 3.6 `calcular` com `Decimal` e unidades explícitas. Break-even como F / (p − v). Remover o ROI de `estimar_custo_beneficio` do fluxo de revisão
+- [x] 3.7 `historico_feedback(task_id)`: motivos de rejeições anteriores em formato estruturado
+- [x] 3.8 `memoria_corporativa` com ranking (BM25 simples, sem dependência nova) no lugar da busca por substring
+- [x] 3.9 Corrigir as heurísticas de [report_analysis](../../../../backend/app/services/report_analysis.py): qualidade sem critério não ganha pontos gratuitos, cobertura com negação e stems válidos. Ajustar testes sem removê-los
 
 ## Etapa 4 — Vetos, entregáveis e segurança  _(depende de 0.1, 0.5 e 3.4)_
 
-- [ ] 4.1 Vetos (placeholder, metatexto, entregável ausente) impedem APPROVE e registram o motivo, conforme 0.1
-- [ ] 4.2 Schema de delegação com `entregaveis` e `criterios` estruturados, preenchido pelo Chief na criação da tarefa
-- [ ] 4.3 Report delimitado como dado no prompt do juiz, com instrução explícita de ignorar comandos contidos no texto
-- [ ] 4.4 Casos de injeção de prompt no golden set (depende de 6.1)
+- [x] 4.1 Vetos (placeholder, metatexto, entregável ausente) impedem APPROVE e registram o motivo, conforme 0.1
+- [x] 4.2 Schema de delegação com `entregaveis` e `criterios` estruturados, preenchido pelo Chief na criação da tarefa
+- [x] 4.3 Report delimitado como dado no prompt do juiz, com instrução explícita de ignorar comandos contidos no texto
+- [x] 4.4 Casos de injeção de prompt no golden set (depende de 6.1)
 
 ## Etapa 5 — Feedback e retrabalho  _(depende de 2)_
 
-- [ ] 5.1 MODIFY e REJECT geram `ReviewFeedback` estruturado: critério, citação e correção pedida
-- [ ] 5.2 A tentativa seguinte recebe o feedback no enunciado de ajuste
-- [ ] 5.3 Ao atingir o limite de tentativas (0.6), a tarefa é escalonada ao CEO com o histórico
+- [x] 5.1 MODIFY e REJECT geram `ReviewFeedback` estruturado: critério, citação e correção pedida
+- [x] 5.2 A tentativa seguinte recebe o feedback no enunciado de ajuste
+- [x] 5.3 Ao atingir o limite de tentativas (0.6), a tarefa é escalonada ao CEO com o histórico
 
 ## Etapa 6 — Avaliação e rollout  _(depende de 2, 3 e 4)_
 
-- [ ] 6.1 Golden set: casos do log, reports reais da base rotulados à mão e casos de injeção
-- [ ] 6.2 Script de avaliação executado via Docker Compose, medindo concordância, taxa de ESCALATE, taxa de fallback e tokens
-- [ ] 6.3 Modo shadow (0.3): o novo pipeline roda ao lado e grava a comparação, sem alterar o veredito
-- [ ] 6.4 Trocar o veredito para o novo pipeline quando a concordância atingir o limite de 0.4
-- [ ] 6.5 Métricas expostas em `reasoning_metrics`
+- [x] 6.1 Golden set: casos do log, reports reais da base rotulados à mão e casos de injeção
+- [x] 6.2 Script de avaliação executado via Docker Compose, medindo concordância, taxa de ESCALATE, taxa de fallback e tokens
+- [x] 6.3 Modo shadow (0.3): o novo pipeline roda ao lado e grava a comparação, sem alterar o veredito
+- [x] 6.4 Trocar o veredito para o novo pipeline quando a concordância atingir o limite de 0.4
+- [x] 6.5 Métricas expostas em `reasoning_metrics`
 
 ## Etapa 7 — Interface e documentação  _(depende de 2)_
 
-- [ ] 7.1 Painel de revisão na aba "Rede corporativa" mostra veredito, `decision_source`, critérios e citações
-- [ ] 7.2 Validar o painel no navegador integrado do VS Code, em todas as telas alteradas
-- [ ] 7.3 ADR-022 a ADR-026 em [ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md), mais atualização de [COMMUNICATION-GRAPH.md](../../../../docs/COMMUNICATION-GRAPH.md) e [REASONING-FORMAT.md](../../../../docs/REASONING-FORMAT.md)
+- [x] 7.1 Painel de revisão na aba "Rede corporativa" mostra veredito, `decision_source`, critérios e citações
+- [x] 7.2 Validar o painel no navegador integrado do VS Code, em todas as telas alteradas
+- [x] 7.3 ADR-022 a ADR-026 em [ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md), mais atualização de [COMMUNICATION-GRAPH.md](../../../../docs/COMMUNICATION-GRAPH.md) e [REASONING-FORMAT.md](../../../../docs/REASONING-FORMAT.md)
 
 ## Etapa 8 — Qualidade e fechamento  _(depende de 1 a 7)_
 
-- [ ] 8.1 `ruff check .`, `mypy` (strict) e `pytest` sem regressão, com cobertura igual ou acima de 98%
-- [ ] 8.2 Frontend: `npm run lint`, `npm run type-check` e `npm run test` via Docker Compose
-- [ ] 8.3 Documentar no progresso os ajustes de expectativa em testes existentes
-- [ ] 8.4 Concluir: mover o plano para `completed/`, criar o arquivo de progresso e atualizar o índice
+- [x] 8.1 `ruff check .`, `mypy` (strict) e `pytest` sem regressão, com cobertura igual ou acima de 98%
+- [x] 8.2 Frontend: `npm run lint`, `npm run type-check` e `npm run test` via Docker Compose
+- [x] 8.3 Documentar no progresso os ajustes de expectativa em testes existentes
+- [x] 8.4 Concluir: mover o plano para `completed/`, criar o arquivo de progresso e atualizar o índice
 
 ## Critérios de aceite verificáveis
 
-- [ ] Report com X/Y/Z/W nunca recebe APPROVE (teste)
-- [ ] Sessão `degraded` nunca recebe APPROVE automático (teste)
-- [ ] Saída inválida após a retentativa resulta em ESCALATE com motivo registrado (teste)
-- [ ] Citação inexistente no report não conta como evidência (teste)
-- [ ] Revisão sem `ler_report` observado não aceita conclusão (teste)
-- [ ] Concordância no golden set atinge o limite definido em 0.4
+- [x] Report com X/Y/Z/W nunca recebe APPROVE (teste)
+- [x] Sessão `degraded` nunca recebe APPROVE automático (teste)
+- [x] Saída inválida após a retentativa resulta em ESCALATE com motivo registrado (teste)
+- [x] Citação inexistente no report não conta como evidência (teste)
+- [x] Revisão sem `ler_report` observado não aceita conclusão (teste)
+- [x] Concordância no golden set atinge o limite definido em 0.4
 
 ## Arquivos afetados
 

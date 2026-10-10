@@ -147,16 +147,20 @@ Registradas em `reasoning_tools.TOOLS`, acessíveis ao Chief durante o ciclo ReA
 
 ### Como o veredito é decidido
 
-```python
-decision = parse_decision(reasoning.conclusion) or assessment.decision
-```
+Desde a revisão por evidências (ADR-022 a ADR-026 em [ARCHITECTURE.md](ARCHITECTURE.md)),
+o veredito depende de `CHIEF_REVIEW_MODE`:
 
-O Chief **sempre** roda o ciclo ReAct completo — é isso que alimenta o raio-X cognitivo e a
-auditoria. Mas a decisão só vem do modelo quando a conclusão traz um rótulo reconhecível.
-Caso contrário vale `report_analysis.assess()`, que nunca deixa a tarefa sem veredito
-(ADR-013).
+- `model`: o Chief coleta evidências com as ferramentas de revisão e o modelo emite um
+  `ChiefVerdict` em JSON validado. Saída inválida duas vezes ou modelo indisponível →
+  `ESCALATE`. Vetos objetivos impedem APPROVE.
+- `shadow` (padrão): vale a tabela heurística abaixo (`report_analysis.assess()`), e o
+  veredito do modelo é gravado ao lado em `review_evidence` para medir concordância.
 
-Tabela determinística, aplicada em ordem:
+Toda tarefa registra `decision_source` (`MODEL`, `UNAVAILABLE`, `INVALID_OUTPUT`,
+`HEURISTIC_SHADOW`, `ATTEMPT_LIMIT`, `CEO_FALLBACK`). Ao atingir
+`CHIEF_REVIEW_MAX_ATTEMPTS`, a tarefa escala ao CEO com o histórico de feedback.
+
+Tabela heurística (modo shadow), aplicada em ordem:
 
 | Condição | Veredito |
 |---|---|

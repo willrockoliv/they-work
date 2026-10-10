@@ -434,6 +434,36 @@ emite evento próprio — contratação, demissão, mudança de regime da Nature
 por *diff* entre dois snapshots consecutivos a cada `GAME_TICK_SECONDS`. Nenhum serviço das
 Fases 2 e 3 precisou ser alterado; o custo é a latência de um tick nesses casos.
 
+#### Revisão do Chief por evidências
+
+**ADR-022 — o modelo decide, as ferramentas dão insumo.** A revisão de um report deixou de
+ser uma tabela de limiares sobre escores heurísticos. O Chief explora com ferramentas de
+evidência (`ler_tarefa`, `ler_report`, `verificar_entregaveis`, `checar_criterios`,
+`detectar_artefatos`, `premissas`, `calcular`, `historico_feedback`, `memoria_corporativa`
+com BM25) e o veredito sai de uma chamada final ao modelo (`services/chief_review.py`).
+
+**ADR-023 — veredito estruturado.** A chamada final usa `format` = JSON schema de
+`ChiefVerdict` (veredito, justificativa, ids de observação `O1…`, critérios com citação),
+temperatura 0 e `seed` fixo. O código valida (citação existe no report, evidências são ids
+observados, APPROVE exige todos os critérios atendidos). Uma retentativa; a segunda falha
+vira `ESCALATE` com `decision_source=INVALID_OUTPUT`. Não há mais fallback por regex.
+
+**ADR-024 — vetos objetivos e revisão degradada nunca aprova.** Placeholder, metatexto de
+execução, entregável ausente e report sem modelo vetam APPROVE (vira MODIFY com o motivo).
+Sem modelo disponível, o modo `model` escala (`UNAVAILABLE`); nenhum caminho determinístico
+produz APPROVE automático.
+
+**ADR-025 — report é dado, juiz é outro modelo.** O report vai delimitado no prompt com
+instrução explícita de ignorar comandos contidos nele (anti-injeção). `checar_criterios` usa
+`CHIEF_JUDGE_MODEL` (distinto do autor) e só conta citações verificadas por substring
+normalizada; sem juiz, cai para o método léxico.
+
+**ADR-026 — rollout em shadow.** `CHIEF_REVIEW_MODE=shadow` (padrão) mantém o veredito
+heurístico e grava a comparação com o modelo em `AgentTask.review_evidence`; `model` troca o
+veredito. A troca exige concordância ≥ 90% no golden set (`python -m app.evals.review_eval`).
+Toda tarefa registra `decision_source`, o limite de tentativas é `CHIEF_REVIEW_MAX_ATTEMPTS`
+(antes não havia limite) e `GET /reasoning/metrics/review` expõe concordância e fallbacks.
+
 Detalhamento da interface: [`frontend/README.md`](../frontend/README.md).
 
 ---

@@ -155,6 +155,23 @@ class ChiefDecision(StrEnum):
     ESCALATE = "ESCALATE"
 
 
+class DecisionSource(StrEnum):
+    """De onde veio o veredito aplicado a uma tarefa (ADR-026)."""
+
+    #: Veredito estruturado do modelo, validado contra as evidências.
+    MODEL = "MODEL"
+    #: Sem modelo: nenhum veredito foi produzido e o caso subiu ao CEO.
+    UNAVAILABLE = "UNAVAILABLE"
+    #: O modelo respondeu, mas fora do contrato mesmo após a nova tentativa.
+    INVALID_OUTPUT = "INVALID_OUTPUT"
+    #: Modo shadow: vale a heurística; o veredito do modelo só é registrado.
+    HEURISTIC_SHADOW = "HEURISTIC_SHADOW"
+    #: Limite de tentativas da frente atingido.
+    ATTEMPT_LIMIT = "ATTEMPT_LIMIT"
+    #: Desempate conservador do CEO sem veredito válido do modelo.
+    CEO_FALLBACK = "CEO_FALLBACK"
+
+
 class AuditEventType(StrEnum):
     """Categorias de evento registradas na trilha de auditoria."""
 

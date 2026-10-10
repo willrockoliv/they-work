@@ -910,6 +910,48 @@ button[aria-pressed='true'] {
   color: var(--text-muted);
 }
 
+.review-evidence summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.review-evidence p {
+  margin: 4px 0;
+}
+
+.task-list .review-criteria {
+  margin: 4px 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.task-list .review-criteria li {
+  display: block;
+  padding: 2px 0;
+  margin: 0;
+  background: none;
+  border: none;
+}
+
+.review-criteria li[data-met='true'] > span:first-child {
+  color: #22c55e;
+}
+
+.review-criteria li[data-met='false'] > span:first-child {
+  color: #fb7185;
+}
+
+.review-criteria q {
+  display: block;
+  margin-left: 16px;
+  font-style: italic;
+}
+
+.review-veto {
+  color: #fbbf24;
+}
+
 .requests-panel .error {
   grid-column: 1 / -1;
   color: #fb7185;

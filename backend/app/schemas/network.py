@@ -13,6 +13,7 @@ from app.models.enums import (
     ChiefDecision,
     CommunicationStatus,
     CommunicationType,
+    DecisionSource,
     InitialRequestStatus,
     TaskComplexity,
     TaskStatus,
@@ -84,6 +85,8 @@ class AgentTaskRead(BaseModel):
     quality_score: int
     decision: ChiefDecision | None
     decision_rationale: str | None
+    decision_source: DecisionSource | None = None
+    review_evidence: dict[str, Any] = Field(default_factory=dict)
     report_summary: str | None
     report_reasoning_session_id: uuid.UUID | None
     review_reasoning_session_id: uuid.UUID | None
@@ -158,6 +161,8 @@ class GraphTask(BaseModel):
     quality_score: int
     decision: ChiefDecision | None = None
     decision_rationale: str | None = None
+    decision_source: DecisionSource | None = None
+    review_evidence: dict[str, Any] = Field(default_factory=dict)
     report_summary: str | None = None
     report_reasoning_session_id: str | None = None
     review_reasoning_session_id: str | None = None
@@ -221,6 +226,7 @@ class DelegateTaskRequest(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     task_description: str = Field(min_length=3)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    deliverables: list[str] = Field(default_factory=list)
     context: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -237,6 +243,7 @@ class ReviewDecisionResponse(BaseModel):
 
     task: AgentTaskRead
     decision: ChiefDecision
+    decision_source: DecisionSource
     rationale: str
     quality_score: int
     achievement_ratio: float

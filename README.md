@@ -138,6 +138,7 @@ Com a interface aberta, o canal `WS /ws/game-state` empurra cada passo em tempo 
 | `GET` | `/reasoning/sessions/{id}` | Replay completo de uma sessão |
 | `GET` | `/reasoning/sessions/{id}/flow` | Fluxograma de uma sessão específica |
 | `GET` | `/reasoning/metrics` | Tokens, tempo, taxa de sucesso, custo em MB·s e ROI |
+| `GET` | `/reasoning/metrics/review` | Revisões do Chief por origem, concordância shadow e taxa de fallback |
 | `GET` | `/reasoning/export` | Dump JSON das sessões para análise externa |
 | `POST` | `/reasoning/retention/purge` | Aplica a política de retenção |
 | `WS` | `/ws/agents/{id}/reasoning` | Fluxo cognitivo de um agente (com replay na conexão) |
@@ -261,6 +262,14 @@ O frontend nunca roda no host — todos os comandos passam pelo container:
 docker compose exec frontend npm run lint
 docker compose exec frontend npm run type-check
 docker compose exec frontend npm run test
+```
+
+Avaliar a revisão do Chief contra o golden set (`backend/app/evals/golden_review.json`).
+O limite para trocar `CHIEF_REVIEW_MODE` de `shadow` para `model` é 90% de concordância:
+
+```bash
+docker compose exec backend python -m app.evals.review_eval            # com Ollama
+docker compose exec backend python -m app.evals.review_eval --offline  # sem modelo
 ```
 
 ---

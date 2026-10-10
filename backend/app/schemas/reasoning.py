@@ -125,6 +125,18 @@ class ReasoningMetricsResponse(BaseModel):
     by_step_type: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ReviewMetricsResponse(BaseModel):
+    total_reviews: int
+    by_source: dict[str, int] = Field(default_factory=dict)
+    by_decision: dict[str, int] = Field(default_factory=dict)
+    escalate_rate: float
+    fallback_rate: float
+    protocol_completed_by_system_rate: float
+    shadow_compared: int
+    shadow_agreement: float
+    review_tokens: int
+
+
 class RetentionPurgeRequest(BaseModel):
     before: datetime | None = None
 

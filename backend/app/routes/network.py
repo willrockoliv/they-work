@@ -90,6 +90,7 @@ def _review_response(result: ReviewResult) -> ReviewDecisionResponse:
     return ReviewDecisionResponse(
         task=AgentTaskRead.model_validate(result.task),
         decision=result.decision,
+        decision_source=result.decision_source,
         rationale=result.rationale,
         quality_score=result.assessment.quality.score,
         achievement_ratio=round(result.assessment.comparison.achievement_ratio, 3),
@@ -463,6 +464,7 @@ def delegate(
                 title=payload.title,
                 task_description=payload.task_description,
                 acceptance_criteria=tuple(payload.acceptance_criteria),
+                deliverables=tuple(payload.deliverables),
                 context=payload.context,
             ),
         )

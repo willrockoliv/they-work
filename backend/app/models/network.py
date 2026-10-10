@@ -73,6 +73,7 @@ class AgentTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Index("ix_agent_tasks_request_status", "request_id", "status"),
         Index("ix_agent_tasks_assignee_status", "assigned_to_agent_id", "status"),
         Index("ix_agent_tasks_chief_status", "assigned_by_chief_id", "status"),
+        Index("ix_agent_tasks_decision_source", "decision_source"),
     )
 
     request_id: Mapped[uuid.UUID] = mapped_column(
@@ -112,6 +113,12 @@ class AgentTask(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         SAEnum(ChiefDecision, name="chief_decision"), nullable=True
     )
     decision_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Origem do veredito aplicado (MODEL, UNAVAILABLE, INVALID_OUTPUT, ...). ADR-026.
+    decision_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    #: Observações citáveis, veredito estruturado, vetos e comparação shadow.
+    review_evidence: Mapped[dict[str, Any]] = mapped_column(
+        JSONType, nullable=False, default=dict
+    )
 
     delegated_at: Mapped[datetime | None] = mapped_column(TimestampType, nullable=True)
     reported_at: Mapped[datetime | None] = mapped_column(TimestampType, nullable=True)
