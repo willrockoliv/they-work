@@ -15,6 +15,7 @@ export const LAYER_COUNT = 4;
 
 /** Distância entre arestas que ligam o mesmo par de nós. */
 export const EDGE_SPACING = 64;
+export const NODE_RADIUS = 22;
 
 export interface PositionedNode extends GraphNode {
   x: number;
@@ -27,6 +28,8 @@ export interface PositionedEdge extends GraphEdge {
   path: string;
   midX: number;
   midY: number;
+  labelX: number;
+  labelY: number;
   /** Quantas arestas do mesmo par precedem esta — define a curvatura. */
   parallelIndex: number;
 }
@@ -134,13 +137,25 @@ export function layoutGraph(
     const length = Math.hypot(dx, dy) || 1;
     const midX = (source.x + target.x) / 2 + (-dy / length) * spread;
     const midY = (source.y + target.y) / 2 + (dx / length) * spread;
+    const sourceDx = midX - source.x;
+    const sourceDy = midY - source.y;
+    const sourceLength = Math.hypot(sourceDx, sourceDy) || 1;
+    const targetDx = midX - target.x;
+    const targetDy = midY - target.y;
+    const targetLength = Math.hypot(targetDx, targetDy) || 1;
+    const startX = source.x + (sourceDx / sourceLength) * NODE_RADIUS;
+    const startY = source.y + (sourceDy / sourceLength) * NODE_RADIUS;
+    const endX = target.x + (targetDx / targetLength) * NODE_RADIUS;
+    const endY = target.y + (targetDy / targetLength) * NODE_RADIUS;
 
     laidOutEdges.push({
       ...edge,
       parallelIndex,
       midX,
       midY,
-      path: `M ${source.x} ${source.y} Q ${midX} ${midY} ${target.x} ${target.y}`,
+      labelX: startX * 0.25 + midX * 0.5 + endX * 0.25,
+      labelY: startY * 0.25 + midY * 0.5 + endY * 0.25,
+      path: `M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`,
     });
   }
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { layoutGraph, type PositionedEdge } from '@/engine/graphLayout';
+import { layoutGraph, NODE_RADIUS, type PositionedEdge } from '@/engine/graphLayout';
 import type { CommunicationType, GraphEdge, RequestGraphResponse } from '@/types/network';
 
 const EDGE_COLOR: Record<CommunicationType, string> = {
@@ -29,7 +29,6 @@ const EDGE_LABEL: Record<CommunicationType, string> = {
   DECISION: 'Decisão',
 };
 
-const NODE_RADIUS = 22;
 const VIEW_WIDTH = 960;
 const VIEW_HEIGHT = 560;
 
@@ -109,18 +108,18 @@ export function NetworkGraph({ graph, onSelectEdge }: NetworkGraphProps): React.
           <marker
             id="arrow"
             viewBox="0 0 10 10"
-            refX="18"
+            refX="10"
             refY="5"
-            markerWidth="6"
+            markerWidth="8"
             markerHeight="6"
             orient="auto-start-reverse"
           >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
           </marker>
         </defs>
 
         <g className="edges">
-          {layout.edges.map((edge) => (
+          {layout.edges.map((edge, index) => (
             <g key={edge.id} style={{ color: EDGE_COLOR[edge.communication_type] }}>
               <path
                 d={edge.path}
@@ -130,6 +129,23 @@ export function NetworkGraph({ graph, onSelectEdge }: NetworkGraphProps): React.
                 strokeOpacity={edge.id === activeEdgeId ? 1 : 0.65}
                 markerEnd="url(#arrow)"
               />
+              <text
+                className="edge-order"
+                x={edge.labelX}
+                y={edge.labelY}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill="currentColor"
+                stroke="#0f172a"
+                strokeWidth={4}
+                paintOrder="stroke"
+                fontSize={13}
+                fontWeight={700}
+                pointerEvents="none"
+                aria-hidden="true"
+              >
+                {index + 1}
+              </text>
               <path
                 d={edge.path}
                 fill="none"
@@ -137,7 +153,7 @@ export function NetworkGraph({ graph, onSelectEdge }: NetworkGraphProps): React.
                 strokeWidth={14}
                 role="button"
                 tabIndex={0}
-                aria-label={`${EDGE_LABEL[edge.communication_type]}: ${edge.summary}`}
+                aria-label={`Comunicação ${index + 1}: ${EDGE_LABEL[edge.communication_type]}: ${edge.summary}`}
                 aria-pressed={edge.id === activeEdgeId}
                 style={{ cursor: 'pointer' }}
                 onClick={() => toggle(edge)}
@@ -148,7 +164,7 @@ export function NetworkGraph({ graph, onSelectEdge }: NetworkGraphProps): React.
                   }
                 }}
               >
-                <title>{`${EDGE_LABEL[edge.communication_type]}: ${edge.summary}`}</title>
+                <title>{`Comunicação ${index + 1}: ${EDGE_LABEL[edge.communication_type]}: ${edge.summary}`}</title>
               </path>
             </g>
           ))}

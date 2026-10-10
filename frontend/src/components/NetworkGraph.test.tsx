@@ -65,12 +65,33 @@ describe('NetworkGraph', () => {
     expect(labels).toContain('ES');
   });
 
+  it('mostra setas na direção das arestas e a ordem no meio delas', () => {
+    const graph = {
+      ...GRAPH,
+      edges: [
+        ...GRAPH.edges,
+        edge('e2', 'dev', 'cto', 'Report da frente de tecnologia'),
+      ],
+    };
+    const { container } = render(<NetworkGraph graph={graph} />);
+
+    expect(container.querySelector('marker#arrow')).toHaveAttribute('refX', '10');
+    expect(container.querySelectorAll('.edges > g > path[marker-end]')).toHaveLength(2);
+    expect([...container.querySelectorAll('.edge-order')].map((node) => node.textContent)).toEqual([
+      '1',
+      '2',
+    ]);
+    expect(
+      screen.getByRole('button', { name: 'Comunicação 1: Delegação: Frente de tecnologia' }),
+    ).toBeInTheDocument();
+  });
+
   it('abre o detalhe da aresta ao clicar nela', async () => {
     render(<NetworkGraph graph={GRAPH} />);
     expect(screen.getByLabelText('Legenda do grafo')).toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole('button', { name: 'Delegação: Frente de tecnologia' }),
+      screen.getByRole('button', { name: 'Comunicação 1: Delegação: Frente de tecnologia' }),
     );
 
     const detail = await screen.findByLabelText('Detalhe da comunicação');
