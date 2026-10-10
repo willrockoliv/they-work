@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.agent import Agent
+from app.models.base import utcnow
 from app.models.enums import (
     AgentRole,
     AgentType,
@@ -367,3 +368,32 @@ def test_segundo_ciclo_nao_recontrata_para_a_mesma_frente(
 
     assert first.created_agents
     assert second.created_agents == ()
+
+
+def test_ciclo_leva_ao_ceo_a_tarefa_escalada_ou_em_consulta(
+    bootstrapped: Session, nature: NatureManager
+) -> None:
+    """Regressão: tarefa revisada com ESCALATE/CONSULT_PEERS ficava parada para sempre."""
+    request = _submit(bootstrapped)
+    agent = _hire_for(bootstrapped, nature, request, AgentRole.CTO)
+    cto = agent_service.get_chief(bootstrapped, AgentRole.CTO)
+    assert cto is not None
+    task = communication_service.delegate_task(
+        bootstrapped,
+        request,
+        cto,
+        agent,
+        DelegationIntake(title="Frente", task_description="Mapear personas"),
+    )
+    task.status = TaskStatus.AWAITING_REVIEW
+    task.report_summary = "Entrega parcial com divergência entre diretorias."
+    task.decision = ChiefDecision.ESCALATE
+    task.reviewed_at = utcnow()
+    bootstrapped.flush()
+
+    result = network_orchestrator.run_cycle(bootstrapped, request, nature=nature)
+
+    assert len(result.tiebreaks) == 1
+    assert result.tiebreaks[0].task is task
+    assert task.decision is not ChiefDecision.ESCALATE
+    assert task.status is not TaskStatus.AWAITING_REVIEW

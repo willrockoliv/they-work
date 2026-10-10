@@ -18,7 +18,13 @@ from sqlalchemy.orm import Session
 
 from app.config.logging import get_logger
 from app.models.agent import Agent
-from app.models.enums import AgentRole, InitialRequestStatus, TaskComplexity, TaskStatus
+from app.models.enums import (
+    AgentRole,
+    ChiefDecision,
+    InitialRequestStatus,
+    TaskComplexity,
+    TaskStatus,
+)
 from app.models.network import AgentTask, InitialRequest
 from app.services import agent_decision_engine, agent_service, communication_service
 from app.services.agent_decision_engine import ReviewResult
@@ -73,6 +79,11 @@ FRONTS: tuple[FrontBlueprint, ...] = (
     ),
 )
 
+#: Vereditos que deixam a tarefa em aberto até o desempate do CEO.
+_CEO_TIEBREAK_DECISIONS: frozenset[ChiefDecision] = frozenset(
+    {ChiefDecision.ESCALATE, ChiefDecision.CONSULT_PEERS}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class CycleResult:
@@ -84,6 +95,7 @@ class CycleResult:
     delegated: tuple[AgentTask, ...] = field(default_factory=tuple)
     executed: tuple[AgentTask, ...] = field(default_factory=tuple)
     reviews: tuple[ReviewResult, ...] = field(default_factory=tuple)
+    tiebreaks: tuple[ReviewResult, ...] = field(default_factory=tuple)
 
 
 #: Turnos em andamento neste processo. Um turno leva minutos com inferência real;
@@ -155,6 +167,19 @@ def run_cycle(
         )
         _notify(on_step)
 
+    # Sem este passo, uma tarefa escalada ou em consulta ficaria parada para sempre:
+    # o Chief já revisou (reviewed_at preenchido) e a revisão não roda de novo.
+    tiebreaks: list[ReviewResult] = []
+    for task in communication_service.list_tasks(
+        session, request_id=request.id, status=TaskStatus.AWAITING_REVIEW
+    ):
+        if task.decision not in _CEO_TIEBREAK_DECISIONS:
+            continue
+        tiebreaks.append(
+            agent_decision_engine.ceo_final_decision(session, task, nature=nature, ollama=ollama)
+        )
+        _notify(on_step)
+
     session.flush()
     logger.info(
         "network.cycle_completed",
@@ -163,6 +188,7 @@ def run_cycle(
         delegated=len(delegated),
         executed=len(executed),
         reviews=len(reviews),
+        tiebreaks=len(tiebreaks),
     )
     return CycleResult(
         request=request,
@@ -171,6 +197,7 @@ def run_cycle(
         delegated=tuple(delegated),
         executed=tuple(executed),
         reviews=tuple(reviews),
+        tiebreaks=tuple(tiebreaks),
     )
 
 
