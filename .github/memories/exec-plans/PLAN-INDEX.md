@@ -4,6 +4,13 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 
 ## .github/memories/exec-plans/backlog/ - planos para futuras implementações
 
+### [2026-10-10-planejamento-decomposicao-acompanhamento-demandas.md](backlog/2026-10-10-planejamento-decomposicao-acompanhamento-demandas.md)
+**Objetivo:** Exigir planejamento aprovado antes da execução, decompor demandas em tarefas pequenas e acompanhar status, dependências e bloqueios
+
+**Status:** 📝 Planejado; decisões sobre gates, estados e decomposição pendentes na Etapa 0
+
+**Diagnóstico:** Pedido “Software house para contabilidade” foi rejeitado pelo CEO, mas ainda gerou três delegações paralelas; seis tarefas persistidas eram três frentes amplas e três reexecuções, sem plano aprovado
+
 ### [2026-10-10-ambiente-desenvolvimento-isolado-agentes.md](backlog/2026-10-10-ambiente-desenvolvimento-isolado-agentes.md)
 **Objetivo:** Permitir que agentes criem e validem ferramentas e aplicacoes Python/web em workspaces controlados, com recursos limitados e sem acesso direto ao host ou aos servicos internos
 
