@@ -4,6 +4,13 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 
 ## .github/memories/exec-plans/backlog/ - planos para futuras implementações
 
+### [2026-10-10-ambiente-desenvolvimento-isolado-agentes.md](backlog/2026-10-10-ambiente-desenvolvimento-isolado-agentes.md)
+**Objetivo:** Permitir que agentes criem e validem ferramentas e aplicacoes Python/web em workspaces controlados, com recursos limitados e sem acesso direto ao host ou aos servicos internos
+
+**Status:** 📝 Planejado, aguardando decisoes de seguranca, cotas e orquestracao (Etapa 0) para ir a `active/`
+
+**Relacao com outros planos:** Complementa, sem substituir, o plano de navegador isolado (acesso web); trata da criacao e execucao de codigo
+
 ### [2026-10-09-navegador-isolado-agentes.md](backlog/2026-10-09-navegador-isolado-agentes.md)
 **Objetivo:** Dar acesso à internet aos agentes por um navegador headless que roda somente em container dedicado (rede `web` isolada, sem acesso ao host), com a navegação visível ao observador em tempo real via frames  
 **Status:** 📝 Planejado, aguardando decisões pendentes (Etapa 0) para ir a `active/`  
