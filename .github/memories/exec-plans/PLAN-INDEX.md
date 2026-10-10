@@ -9,6 +9,11 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 **Status:** 📝 Planejado, aguardando decisões pendentes (Etapa 0) para ir a `active/`  
 **Decisões propostas:** ADR-016 a ADR-021 (serviço `browser`, rede `web`, sessão efêmera, validação anti-SSRF, screencast via WS, feature flag desligada por padrão)
 
+### [2026-10-10-revisao-chief-decisao-por-evidencias.md](backlog/2026-10-10-revisao-chief-decisao-por-evidencias.md)
+**Objetivo:** Fazer o modelo do Chief decidir o veredito de cada report com saída estruturada validada, apoiado por ferramentas de evidência verificáveis; heurísticas viram sinais e a ausência de modelo gera ESCALATE  
+**Status:** 📝 Planejado, aguardando decisões pendentes (Etapa 0) para ir a `active/`  
+**Decisões propostas:** ADR-022 a ADR-026 (decisão estruturada com exploração separada, evidências como fatos, juiz por critério com citação verificada, vetos mínimos, rollout em shadow)
+
 
 ## .github/memories/exec-plans/active/ - planos em andamento
 
