@@ -4,7 +4,10 @@ Use este arquivo para localizar rapidamente os planos de execução ativos, comp
 
 ## .github/memories/exec-plans/backlog/ - planos para futuras implementações
 
-*Nenhum plano no backlog.*
+### [2026-10-09-navegador-isolado-agentes.md](backlog/2026-10-09-navegador-isolado-agentes.md)
+**Objetivo:** Dar acesso à internet aos agentes por um navegador headless que roda somente em container dedicado (rede `web` isolada, sem acesso ao host), com a navegação visível ao observador em tempo real via frames  
+**Status:** 📝 Planejado, aguardando decisões pendentes (Etapa 0) para ir a `active/`  
+**Decisões propostas:** ADR-016 a ADR-021 (serviço `browser`, rede `web`, sessão efêmera, validação anti-SSRF, screencast via WS, feature flag desligada por padrão)
 
 
 ## .github/memories/exec-plans/active/ - planos em andamento
